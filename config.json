@@ -1,0 +1,31 @@
+{
+  "exchanges": [
+    {
+      "name": "Binance",
+      "baseUrl": "wss://stream.binance.com:9443/ws",
+      "symbols": ["btcusdt", "ethusdt"],
+      "enabled": true
+    },
+    {
+      "name": "Bybit",
+      "baseUrl": "wss://stream.bybit.com/v5/public/spot",
+      "symbols": ["BTCUSDT", "ETHUSDT"],
+      "enabled": true
+    }
+  ],
+  "database": {
+    "type": "sqlite",
+    "path": "trades.db",
+    "batchSize": 100,
+    "flushIntervalMs": 1000
+  },
+  "export": {
+    "enabled": true,
+    "intervalMinutes": 60,
+    "outputDir": "./exports"
+  },
+  "monitoring": {
+    "httpPort": 8080,
+    "enableMetrics": true
+  }
+}

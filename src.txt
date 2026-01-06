@@ -1,0 +1,157 @@
+### FILE: src/main/kotlin/Main.kt
+package com.aandios
+
+import com.aandios.service.TradeCollectorService
+import com.aandios.service.TradeProcessor
+import com.aandios.service.WebSocketClient
+import com.aandios.storage.TradeDAO
+import kotlinx.coroutines.runBlocking
+
+fun main() = runBlocking {
+//    val tradeDAO = TradeDAO()
+    val processor = TradeProcessor()
+    val client = WebSocketClient("wss://stream.binance.com:9443/ws/btcusdt@trade")
+    client.connectAndListen{ json ->
+        processor.process(json)
+    }
+    val service = TradeCollectorService(client, processor)
+    service.start()
+}
+
+### FILE: src/main/kotlin/config/AppConfig.kt
+package com.aandios.config
+
+
+
+### FILE: src/main/kotlin/model/Trade.kt
+package com.aandios.model
+
+data class Trade(
+    val timestamp: Long,      // ts
+    val price: Double,        // price
+    val quantity: Double,     // qty
+    val direction: Boolean    // true = bid, false = ask
+)
+
+### FILE: src/main/kotlin/service/TradeCollectorService.kt
+package com.aandios.service
+
+import kotlinx.coroutines.delay
+
+class TradeCollectorService(
+    private val webSocketClient: WebSocketClient,
+    private val tradeProcessor: TradeProcessor
+) {
+    suspend fun start() {
+        while (true) {
+            try {
+                webSocketClient.connectAndListen { json ->
+                    tradeProcessor.process(json)
+                }
+            } catch (e: Exception) {
+                println("Connection lost, reconnecting in 5s")
+                e.printStackTrace()
+                delay(5000)
+            }
+        }
+    }
+}
+
+### FILE: src/main/kotlin/service/TradeProcessor.kt
+package com.aandios.service
+
+import com.aandios.model.Trade
+import com.aandios.storage.TradeDAO
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import mu.KotlinLogging
+private val log = KotlinLogging.logger {}
+
+class TradeProcessor(
+//    private val tradeDAO: TradeDAO
+) {
+    private val mapper = jacksonObjectMapper()
+
+    fun process(json: String) {
+        try {
+            val tradeData = mapper.readTree(json)
+            val trade = Trade(
+                timestamp = tradeData["T"].asLong(),
+                price = tradeData["p"].asDouble(),
+                quantity = tradeData["q"].asDouble(),
+                direction = !tradeData["m"].asBoolean() // true = bid, false = ask
+            )
+//            tradeDAO.insert(trade)
+            log.info { "Trade: ${trade.timestamp}, ${trade.price}, ${trade.quantity}, ${if (trade.direction) "bid" else "ask"}" }
+        } catch (e: Exception) {
+            println("Error processing trade: $e")
+        }
+    }
+}
+
+### FILE: src/main/kotlin/service/WebSocketClient.kt
+package com.aandios.service
+
+import io.ktor.client.*
+import io.ktor.client.plugins.websocket.*
+import io.ktor.websocket.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+
+class WebSocketClient(
+    private val url: String,
+) {
+    private val client = HttpClient {
+        install(WebSockets)
+    }
+
+    suspend fun connectAndListen(onMessage: (json: String)->Unit) {
+        client.webSocket(url) {
+            launch {
+                for (frame in incoming) {
+                    if (frame is Frame.Text) {
+                        onMessage(frame.readText())
+                    }
+                }
+            }
+        }
+    }
+}
+
+### FILE: src/main/kotlin/storage/DatabaseManager.kt
+package com.aandios.storage
+
+
+
+### FILE: src/main/kotlin/storage/TradeDTO.kt
+package com.aandios.storage
+
+import com.aandios.model.Trade
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.transactions.transaction
+
+class TradeDAO {
+    object Trades : Table() {
+        val ts = long("ts")
+        val price = double("price")
+        val qty = double("qty")
+        val direction = bool("direction") // true = bid, false = ask
+    }
+
+    init {
+        transaction {
+            SchemaUtils.create(Trades)
+        }
+    }
+
+    fun insert(trade: Trade) {
+        transaction {
+            Trades.insert {
+                it[ts] = trade.timestamp
+                it[price] = trade.price
+                it[qty] = trade.quantity
+                it[direction] = trade.direction
+            }
+        }
+    }
+}
+
