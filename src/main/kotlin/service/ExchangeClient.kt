@@ -1,12 +1,12 @@
 package com.aandios.service
 
 import com.aandios.config.ExchangeConfig
+import com.aandios.exchange.ExchangeAdapterFactory
 import io.ktor.client.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import mu.KotlinLogging
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 private val log = KotlinLogging.logger {}
@@ -15,10 +15,12 @@ class ExchangeClient(
     private val config: ExchangeConfig,
     private val processor: TradeProcessor
 ) {
+    private val adapter = ExchangeAdapterFactory.createAdapter(config.name)
     private val clients = mutableMapOf<String, HttpClient>()
+    private val clientJobs = mutableListOf<Job>()
 
     suspend fun start() {
-        log.info { "Запуск клиента для ${config.name}" }
+        log.info { "🔌 Запуск клиента для ${config.name} (${config.symbols.size} пар)" }
 
         config.symbols.forEach { symbol ->
             launchClientForSymbol(symbol)
@@ -26,11 +28,7 @@ class ExchangeClient(
     }
 
     private suspend fun launchClientForSymbol(symbol: String) {
-        val url = when (config.name) {
-            "Binance" -> "${config.baseUrl}/${symbol.lowercase()}@trade"
-            "Bybit" -> config.baseUrl
-            else -> throw IllegalArgumentException("Unknown exchange: ${config.name}")
-        }
+        val url = adapter.getWebSocketUrl(symbol)
 
         val client = HttpClient {
             install(WebSockets) {
@@ -41,13 +39,15 @@ class ExchangeClient(
 
         clients[symbol] = client
 
-        CoroutineScope(Dispatchers.IO).launch {
+        val job = CoroutineScope(Dispatchers.IO).launch {
             connectAndListen(url, symbol, client)
         }
+        clientJobs.add(job)
     }
 
     private suspend fun connectAndListen(url: String, symbol: String, client: HttpClient) {
         var reconnectAttempts = 0
+        val maxReconnectDelay = 30000L
 
         while (true) {
             try {
@@ -55,18 +55,12 @@ class ExchangeClient(
                 log.info { "${config.name}/$symbol: Попытка подключения #$reconnectAttempts" }
 
                 client.webSocket(url) {
-                    log.info { "${config.name}/$symbol: WebSocket соединение установлено" }
+                    log.info { "✅ ${config.name}/$symbol: WebSocket подключен" }
 
-                    // Для Bybit нужно отправить подписку
-                    if (config.name == "Bybit") {
-                        val subscribeMessage = """
-                            {
-                                "op": "subscribe",
-                                "args": ["publicTrade.$symbol"]
-                            }
-                        """.trimIndent()
-                        send(subscribeMessage)
-                        log.info { "${config.name}/$symbol: Отправлена подписка" }
+                    // Отправляем подписку если требуется
+                    adapter.getSubscribeMessage(symbol)?.let { message ->
+                        send(message)
+                        log.debug { "${config.name}/$symbol: Отправлена подписка" }
                     }
 
                     reconnectAttempts = 0
@@ -75,10 +69,17 @@ class ExchangeClient(
                         when (frame) {
                             is Frame.Text -> {
                                 val text = frame.readText()
+
+                                // Фильтруем служебные сообщения
+                                if (!adapter.isTradeMessage(text)) {
+                                    continue
+                                }
+
                                 processor.process(text, config.name, symbol)
                             }
                             is Frame.Close -> {
-                                log.info { "${config.name}/$symbol: WebSocket закрыт" }
+                                val reason = frame.readReason()?.message ?: "no reason"
+                                log.info { "📴 ${config.name}/$symbol: Соединение закрыто: $reason" }
                                 break
                             }
                             else -> {}
@@ -86,22 +87,27 @@ class ExchangeClient(
                     }
                 }
             } catch (e: Exception) {
-                val delayMs = calculateReconnectDelay(reconnectAttempts)
+                val delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
                 log.error(e) {
-                    "${config.name}/$symbol: Ошибка соединения. Переподключение через ${delayMs/1000}сек"
+                    "❌ ${config.name}/$symbol: Ошибка. Переподключение через ${delayMs/1000}с"
                 }
                 delay(delayMs)
             }
         }
     }
 
-    private fun calculateReconnectDelay(attempt: Int): Long {
+    private fun calculateReconnectDelay(attempt: Int, maxDelay: Long): Long {
         val delay = 1000L * (1 shl (attempt - 1).coerceAtMost(5))
-        return delay.coerceAtMost(30000L)
+        return delay.coerceAtMost(maxDelay)
     }
 
     suspend fun stop() {
+        clientJobs.forEach { it.cancel() }
+        clientJobs.clear()
+
         clients.values.forEach { it.close() }
         clients.clear()
+
+        log.info { "✅ Клиент ${config.name} остановлен" }
     }
 }

@@ -1,11 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <!-- Консольный аппендер -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- Файловый аппендер (опционально) -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/trade-collector.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/trade-collector.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Уровни логирования -->
     <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="FILE" />
     </root>
+
+    <!-- Наши логгеры -->
+    <logger name="com.aandios" level="INFO" />
+    <logger name="com.aandios.service.TradeProcessor" level="DEBUG" />
+
+    <!-- Сторонние логгеры (уменьшаем шум) -->
+    <logger name="io.ktor" level="WARN" />
+    <logger name="io.netty" level="WARN" />
+    <logger name="org.jetbrains.exposed" level="WARN" />
 </configuration>

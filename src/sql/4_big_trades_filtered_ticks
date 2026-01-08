@@ -1,0 +1,74 @@
+-- Таблица для хранения только больших сделок (Big Trades)
+CREATE TABLE filtered_ticks (
+    id BIGSERIAL NOT NULL,
+    
+    -- Идентификаторы (как в raw_ticks)
+    exchange VARCHAR(20) NOT NULL,
+    symbol VARCHAR(20) NOT NULL,
+    
+    -- Данные сделки
+    timestamp BIGINT NOT NULL,
+    price DECIMAL(20, 8) NOT NULL,
+    quantity DECIMAL(30, 8) NOT NULL,
+    is_buy BOOLEAN NOT NULL,
+    
+    -- Фильтровочные метрики
+    volume_usd DECIMAL(30, 2),      -- Объём в USD (price * quantity)
+    threshold_value DECIMAL(30, 8), -- Пороговое значение на момент сделки
+    threshold_percentile DECIMAL(5, 2), -- Перцентиль (например, 0.97 для 3%)
+    
+    -- Категория сделки (можно потом классифицировать)
+    category VARCHAR(20),           -- 'large', 'very_large', 'whale'
+    
+    -- Технические поля
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    batch_id UUID,                  -- ID батча при импорте
+    
+    -- Ограничения
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
+
+-- Индексы для быстрого анализа больших сделок
+CREATE INDEX idx_filtered_ticks_exchange_symbol 
+    ON filtered_ticks(exchange, symbol);
+
+CREATE INDEX idx_filtered_ticks_timestamp 
+    ON filtered_ticks(timestamp DESC);
+
+CREATE INDEX idx_filtered_ticks_volume_usd 
+    ON filtered_ticks(volume_usd DESC);
+
+CREATE INDEX idx_filtered_ticks_category 
+    ON filtered_ticks(category);
+
+-- Индекс для анализа по размеру сделки относительно порога
+CREATE INDEX idx_filtered_ticks_threshold_ratio 
+    ON filtered_ticks((quantity / NULLIF(threshold_value, 0)) DESC);
+
+-- Функция для создания партиций (аналогично raw_ticks)
+CREATE OR REPLACE FUNCTION create_filtered_partition()
+RETURNS void AS $$
+DECLARE
+    partition_name TEXT;
+    start_date DATE;
+    end_date DATE;
+BEGIN
+    start_date := CURRENT_DATE;
+    end_date := start_date + INTERVAL '7 days';  -- Недельные партиции для filtered
+    partition_name := 'filtered_ticks_' || to_char(start_date, 'YYYY_MM_DD');
+    
+    EXECUTE format('
+        CREATE TABLE IF NOT EXISTS %I 
+        PARTITION OF filtered_ticks
+        FOR VALUES FROM (%L) TO (%L)',
+        partition_name,
+        EXTRACT(EPOCH FROM start_date) * 1000,
+        EXTRACT(EPOCH FROM end_date) * 1000
+    );
+    
+    RAISE NOTICE 'Created filtered partition: %', partition_name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Создаём первую партицию
+SELECT create_filtered_partition();

@@ -1,0 +1,17 @@
+-- Создаём базу данных для торговли
+CREATE DATABASE trade_collector 
+    WITH 
+    ENCODING = 'UTF8'
+    CONNECTION LIMIT = -1;
+
+-- Создаём пользователя с паролем
+CREATE USER trade_user WITH PASSWORD 'strong_password_here';
+
+-- Даём все права на базу
+GRANT ALL PRIVILEGES ON DATABASE trade_collector TO trade_user;
+
+-- Подключаемся к новой базе
+\c trade_collector
+
+-- Включаем расширение для лучшего UUID (опционально)
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

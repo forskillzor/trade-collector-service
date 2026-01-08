@@ -2,30 +2,38 @@
   "exchanges": [
     {
       "name": "Binance",
-      "baseUrl": "wss://stream.binance.com:9443/ws",
-      "symbols": ["btcusdt", "ethusdt"],
-      "enabled": true
-    },
-    {
-      "name": "Bybit",
-      "baseUrl": "wss://stream.bybit.com/v5/public/spot",
-      "symbols": ["BTCUSDT", "ETHUSDT"],
+      "symbols": ["ltcusdt"],
       "enabled": true
     }
   ],
   "database": {
-    "type": "sqlite",
-    "path": "trades.db",
-    "batchSize": 100,
+    "type": "postgresql",
+    "host": "localhost",
+    "port": 6432,
+    "database": "trade_collector",
+    "username": "trade_user",
+    "password": "JXDsdSZzXx1221!!!",
+    "batchSize": 1000,
     "flushIntervalMs": 1000
+  },
+  "processor": {
+    "windowSize": 1000000,
+    "slideStep": 100000,
+    "filterPercentile": 0.98,
+    "timeframes": ["1m", "5m", "1h"],
+    "aggregatesOutputDir": "./aggregates"
   },
   "export": {
     "enabled": true,
     "intervalMinutes": 60,
-    "outputDir": "./exports"
+    "outputDir": "./exports",
+    "keepDays": 7
   },
   "monitoring": {
     "httpPort": 8080,
-    "enableMetrics": true
+    "enableMetrics": true,
+    "metricsPath": "/metrics",
+    "healthPath": "/health",
+    "statusPath": "/status"
   }
 }

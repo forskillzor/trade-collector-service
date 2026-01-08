@@ -1,157 +1,2241 @@
 ### FILE: src/main/kotlin/Main.kt
 package com.aandios
 
+import com.aandios.config.ConfigManager
 import com.aandios.service.TradeCollectorService
-import com.aandios.service.TradeProcessor
-import com.aandios.service.WebSocketClient
-import com.aandios.storage.TradeDAO
-import kotlinx.coroutines.runBlocking
+import com.aandios.storage.postgres.TradeDAO
+import mu.KotlinLogging
+import kotlinx.coroutines.*
+import kotlin.system.exitProcess
+import java.nio.file.Paths
+
+private val log = KotlinLogging.logger {}
 
 fun main() = runBlocking {
-//    val tradeDAO = TradeDAO()
-    val processor = TradeProcessor()
-    val client = WebSocketClient("wss://stream.binance.com:9443/ws/btcusdt@trade")
-    client.connectAndListen{ json ->
-        processor.process(json)
+    val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        log.error(throwable) { "Необработанное исключение" }
+        exitProcess(1)
     }
-    val service = TradeCollectorService(client, processor)
-    service.start()
+
+    val scope = CoroutineScope(Dispatchers.Default + exceptionHandler)
+
+    try {
+        // Загрузка конфигурации
+        ConfigManager.loadFromFile()
+        val config = ConfigManager.getConfig()
+
+        // Проверяем что это PostgreSQL
+        if (config.database.type.lowercase() != "postgresql") {
+            log.error { "❌ Поддерживается только PostgreSQL. Укажите type='postgresql' в config.json" }
+            exitProcess(1)
+        }
+
+        // Создаем директории если их нет
+        Paths.get(config.processor.aggregatesOutputDir).toFile().mkdirs()
+        Paths.get(config.export.outputDir).toFile().mkdirs()
+
+        log.info { "═".repeat(60) }
+        log.info { "🚀 Запуск TradeCollectorService v${BuildConfig.VERSION}" }
+        log.info { "📊 Биржи: ${config.exchanges.size}" }
+        config.exchanges.forEach { exchange ->
+            log.info { "   • ${exchange.name}: ${exchange.symbols.size} пар" }
+        }
+        log.info { "📈 Мониторинг: http://localhost:${config.monitoring.httpPort}" }
+        log.info { "💾 База данных: PostgreSQL ${config.database.host}:${config.database.port}/${config.database.database}" }
+        log.info { "🎯 Фильтр: ${config.processor.filterPercentile} перцентиль" }
+        log.info { "📊 Таймфреймы: ${config.processor.timeframes}" }
+        log.info { "═".repeat(60) }
+
+        // Инициализация БД
+        log.info { "🔗 Подключение к PostgreSQL..." }
+        val hikariDataSource = TradeDAO.createDataSource(config.database)
+        val dao = TradeDAO(hikariDataSource)
+
+        // Создание сервиса
+        val service = TradeCollectorService(dao, config)
+
+        // Обработка сигналов завершения
+        val shutdownHook = Thread {
+            log.info { "\n📴 Получен сигнал завершения..." }
+            runBlocking {
+                service.stop()
+                dao.shutdown()
+            }
+            log.info { "✅ Сервис завершен" }
+        }
+        Runtime.getRuntime().addShutdownHook(shutdownHook)
+
+        // Запуск сервиса
+        service.start()
+
+        // Ожидание завершения
+        while (service.isRunning()) {
+            delay(1000)
+        }
+
+    } catch (e: Throwable) {
+        log.error(e) { "❌ Критическая ошибка при запуске" }
+        exitProcess(1)
+    }
+}
+
+object BuildConfig {
+    const val VERSION = "2.0.0"
 }
 
 ### FILE: src/main/kotlin/config/AppConfig.kt
 package com.aandios.config
 
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.io.File
 
+@Serializable
+data class ExchangeConfig(
+    val name: String,
+    val symbols: List<String>,
+    val enabled: Boolean = true
+)
+
+@Serializable
+data class DatabaseConfig(
+    val type: String = "postgresql",
+    val host: String = "localhost",
+    val port: Int = 6432,
+    val database: String = "trade_collector",
+    val username: String = "trade_user",
+    val password: String = "your_password_here",
+    val batchSize: Int = 1000,
+    val flushIntervalMs: Long = 1000
+)
+
+@Serializable
+data class ProcessorConfig(
+        val batchSize: Int = 1000,
+        val flushIntervalMs: Long = 1000,
+        val windowSize: Int = 1000000,
+        val slideStep: Int = 100000,
+        val filterPercentile: Double = 0.98,
+        val timeframes: List<String> = listOf("1m", "5m", "1h"),
+        val aggregatesOutputDir: String = "./aggregates"
+)
+
+@Serializable
+data class ExportConfig(
+    val enabled: Boolean = true,
+    val intervalMinutes: Int = 60,
+    val outputDir: String = "./exports",
+    val keepDays: Int = 7
+)
+
+@Serializable
+data class MonitoringConfig(
+    val httpPort: Int = 8080,
+    val enableMetrics: Boolean = true,
+    val metricsPath: String = "/metrics",
+    val healthPath: String = "/health",
+    val statusPath: String = "/status"
+)
+
+@Serializable
+data class AppConfig(
+    val exchanges: List<ExchangeConfig> = emptyList(),
+    val database: DatabaseConfig = DatabaseConfig(),
+    val processor: ProcessorConfig = ProcessorConfig(),
+    val export: ExportConfig = ExportConfig(),
+    val monitoring: MonitoringConfig = MonitoringConfig()
+)
+
+object ConfigManager {
+    private var config: AppConfig = AppConfig()
+
+    fun loadFromFile(path: String = "config.json") {
+        try {
+            val configFile = File(path)
+            if (configFile.exists()) {
+                val json = configFile.readText()
+                config = Json {
+                    ignoreUnknownKeys = true
+                }.decodeFromString<AppConfig>(json)
+                println("✅ Конфигурация загружена из $path")
+            } else {
+                config = createDefaultConfig()
+                saveToFile(path)
+                println("📝 Создан файл конфигурации по умолчанию: $path")
+                println("ℹ️  Отредактируйте его и перезапустите приложение")
+                println("⚠️  Укажите пароль PostgreSQL в config.json!")
+            }
+        } catch (e: Exception) {
+            println("❌ Ошибка загрузки конфигурации: ${e.message}")
+            config = createDefaultConfig()
+        }
+    }
+
+    private fun createDefaultConfig(): AppConfig {
+        return AppConfig(
+            exchanges = listOf(
+                ExchangeConfig(
+                    name = "Binance",
+                    symbols = listOf("btcusdt", "ethusdt", "solusdt"),
+                    enabled = true
+                ),
+                ExchangeConfig(
+                    name = "Bybit",
+                    symbols = listOf("BTCUSDT", "ETHUSDT", "SOLUSDT"),
+                    enabled = true
+                )
+            ),
+            database = DatabaseConfig(
+                type = "postgresql",
+                host = "localhost",
+                port = 6432,
+                database = "trade_collector",
+                username = "trade_user",
+                password = "your_password_here",
+                batchSize = 1000,
+                flushIntervalMs = 1000
+            ),
+            processor = ProcessorConfig(),
+            export = ExportConfig(),
+            monitoring = MonitoringConfig()
+        )
+    }
+
+    fun saveToFile(path: String = "config.json") {
+        try {
+            File(path).parentFile?.mkdirs()
+            val json = Json { prettyPrint = true }.encodeToString(config)
+            File(path).writeText(json)
+        } catch (e: Exception) {
+            println("❌ Ошибка сохранения конфигурации: ${e.message}")
+        }
+    }
+
+    fun getConfig(): AppConfig = config
+}
+
+### FILE: src/main/kotlin/exchange/BaseExchangeAdapter.kt
+package com.aandios.exchange
+
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+
+abstract class BaseExchangeAdapter(override val name: String) : ExchangeAdapter {
+    protected val mapper = jacksonObjectMapper()
+
+    override fun getSubscribeMessage(symbol: String): String? = null
+}
+
+### FILE: src/main/kotlin/exchange/ExchangeAdapter.kt
+package com.aandios.exchange
+
+import com.aandios.model.Trade
+
+interface ExchangeAdapter {
+    val name: String
+    fun getWebSocketUrl(symbol: String): String
+    fun getSubscribeMessage(symbol: String): String?
+    fun parseTrade(json: String, symbol: String): Trade?
+    fun isTradeMessage(json: String): Boolean
+}
+
+### FILE: src/main/kotlin/exchange/ExchangeAdapterFactory.kt
+package com.aandios.exchange
+
+import com.aandios.exchange.binance.BinanceAdapter
+import com.aandios.exchange.bybit.BybitAdapter
+
+object ExchangeAdapterFactory {
+    fun createAdapter(exchangeName: String): ExchangeAdapter {
+        return when (exchangeName.lowercase()) {
+            "binance" -> BinanceAdapter()
+            "bybit" -> BybitAdapter()
+            else -> throw IllegalArgumentException("❌ Неизвестная биржа: $exchangeName")
+        }
+    }
+
+    fun getSupportedExchanges(): List<String> = listOf("Binance", "Bybit")
+}
+
+### FILE: src/main/kotlin/exchange/binance/BinanceAdapter.kt
+package com.aandios.exchange.binance
+
+import com.aandios.exchange.BaseExchangeAdapter
+import com.aandios.model.Trade
+
+class BinanceAdapter : BaseExchangeAdapter("Binance") {
+    override fun getWebSocketUrl(symbol: String): String {
+        return "wss://stream.binance.com:9443/ws/${symbol.lowercase()}@trade"
+    }
+
+    override fun parseTrade(json: String, symbol: String): Trade? {
+        return try {
+            val node = mapper.readTree(json)
+            Trade(
+                exchange = name,
+                symbol = symbol.uppercase(),
+                timestamp = node["T"].asLong(),
+                price = node["p"].asDouble(),
+                quantity = node["q"].asDouble(),
+                isBuy = !node["m"].asBoolean()
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun isTradeMessage(json: String): Boolean {
+        return try {
+            val node = mapper.readTree(json)
+            node.has("e") && node["e"].asText() == "trade"
+        } catch (e: Exception) {
+            false
+        }
+    }
+}
+
+### FILE: src/main/kotlin/exchange/bybit/BybitAdapter.kt
+package com.aandios.exchange.bybit
+
+import com.aandios.exchange.BaseExchangeAdapter
+import com.aandios.model.Trade
+
+class BybitAdapter : BaseExchangeAdapter("Bybit") {
+    override fun getWebSocketUrl(symbol: String): String {
+        return "wss://stream.bybit.com/v5/public/spot"
+    }
+
+    override fun getSubscribeMessage(symbol: String): String {
+        return """
+            {
+                "op": "subscribe",
+                "args": ["publicTrade.$symbol"]
+            }
+        """.trimIndent()
+    }
+
+    override fun parseTrade(json: String, symbol: String): Trade? {
+        return try {
+            val node = mapper.readTree(json)
+
+            if (node.has("topic") && node["topic"].asText() == "publicTrade.$symbol") {
+                val data = node["data"]
+                if (data.isArray && data.size() > 0) {
+                    val tradeData = data[0]
+                    return Trade(
+                        exchange = name,
+                        symbol = symbol.uppercase(),
+                        timestamp = tradeData["T"].asLong(),
+                        price = tradeData["p"].asDouble(),
+                        quantity = tradeData["v"].asDouble(),
+                        isBuy = tradeData["S"].asText() == "Buy"
+                    )
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun isTradeMessage(json: String): Boolean {
+        return try {
+            val node = mapper.readTree(json)
+            node.has("topic") && node["topic"].asText().startsWith("publicTrade.")
+        } catch (e: Exception) {
+            false
+        }
+    }
+}
+
+### FILE: src/main/kotlin/model/AggregateCandle.kt
+package com.aandios.model
+
+import java.math.BigDecimal
+import java.nio.ByteBuffer
+
+data class AggregateCandle(
+    val exchange: String,
+    val symbol: String,
+    val timeframe: String,
+    val startTime: Long,
+    val endTime: Long,
+
+    // Arrow файл с данными
+    val arrowData: ByteBuffer,
+
+    // Метаданные
+    val totalTicks: Long,
+    val minPrice: BigDecimal,
+    val maxPrice: BigDecimal,
+    val priceLevels: Int
+)
+
+// Структура Arrow файла
+data class PriceLevelData(
+    val price: BigDecimal,
+    var bidVolume: BigDecimal = BigDecimal.ZERO, // объём на bid
+    var askVolume: BigDecimal = BigDecimal.ZERO, // объём на ask
+    var bidCount: Int = 0,                       // количество bid сделок
+    var askCount: Int = 0                        // количество ask сделок
+)
+
+### FILE: src/main/kotlin/model/FilteredTrade.kt
+package com.aandios.model
+
+import java.math.BigDecimal
+
+data class FilteredTrade(
+    val trade: Trade,
+    val volumeUsd: BigDecimal,
+    val percentileThreshold: Double, // например 0.98
+    val volumeThreshold: BigDecimal, // пороговый объём
+    val tradeCategory: TradeCategory? = null,
+    val windowStartTime: Long,
+    val windowEndTime: Long,
+    val windowTotalTrades: Int
+)
+
+enum class TradeCategory {
+    LARGE,      // > 98 перцентиль
+    VERY_LARGE, // > 99 перцентиль
+    WHALE       // > 99.5 перцентиль
+}
 
 ### FILE: src/main/kotlin/model/Trade.kt
 package com.aandios.model
 
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.math.BigDecimal
+
 data class Trade(
-    val timestamp: Long,      // ts
-    val price: Double,        // price
-    val quantity: Double,     // qty
-    val direction: Boolean    // true = bid, false = ask
+    val exchange: String,
+    val symbol: String,
+    val timestamp: Long,
+    val price: Double,
+    val quantity: Double,
+    val isBuy: Boolean
+) {
+    fun toLocalDateTime(): LocalDateTime {
+        return LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(timestamp),
+            ZoneOffset.UTC
+        )
+    }
+
+    fun getVolumeUsd(): Double = price * quantity
+
+    companion object {
+        fun fromRaw(
+            exchange: String,
+            symbol: String,
+            timestamp: Long,
+            price: BigDecimal,
+            quantity: BigDecimal,
+            isBuy: Boolean
+        ): Trade {
+            return Trade(
+                exchange = exchange,
+                symbol = symbol,
+                timestamp = timestamp,
+                price = price.toDouble(),
+                quantity = quantity.toDouble(),
+                isBuy = isBuy
+            )
+        }
+    }
+}
+
+### FILE: src/main/kotlin/model/VolumeWindow.kt
+package com.aandios.model
+
+import java.math.BigDecimal
+
+data class VolumeWindow(
+    val exchange: String,
+    val symbol: String,
+    val startTime: Long,
+    val endTime: Long,
+    val totalTrades: Int,
+
+    // Статистика по объёмам
+    val minVolume: BigDecimal,
+    val maxVolume: BigDecimal,
+    val avgVolume: BigDecimal,
+    val medianVolume: BigDecimal,
+    val stddevVolume: BigDecimal,
+
+    // Перцентили
+    val p50Volume: BigDecimal,
+    val p95Volume: BigDecimal,
+    val p98Volume: BigDecimal,
+    val p99Volume: BigDecimal,
+
+    // Порог фильтрации
+    val filterPercentile: Double,
+    val filterThreshold: BigDecimal
 )
+
+### FILE: src/main/kotlin/service/AggregateProcessor.kt
+package com.aandios.service
+
+import com.aandios.model.*
+import com.aandios.storage.postgres.TradeDAO
+import mu.KotlinLogging
+import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.vector.*
+import org.apache.arrow.vector.ipc.ArrowStreamWriter
+import java.math.BigDecimal
+import java.nio.ByteBuffer
+import java.nio.channels.Channels
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.time.Instant
+import java.util.*
+import kotlinx.coroutines.*
+import org.apache.arrow.vector.types.pojo.ArrowType
+import org.apache.arrow.vector.types.pojo.FieldType
+import java.io.ByteArrayOutputStream
+
+private val log = KotlinLogging.logger {}
+
+class AggregateProcessor(
+    private val dao: TradeDAO,
+    private val timeframes: List<String> = listOf("1m", "5m", "1h"),
+    private val outputDir: String = "./aggregates"
+) {
+    // todo how to get this allocator in aggregateCandleBuilder
+    private val allocator = RootAllocator()
+    private val activeCandles = mutableMapOf<String, MutableMap<String, AggregateCandleBuilder>>()
+
+    init {
+        Files.createDirectories(Paths.get(outputDir))
+    }
+
+    inner class AggregateCandleBuilder(
+        val exchange: String,
+        val symbol: String,
+        val timeframe: String,
+        val startTime: Long
+    ) {
+        val endTime: Long = calculateEndTime(startTime, timeframe)
+        val priceLevels = mutableMapOf<BigDecimal, PriceLevelData>()
+        var totalTicks = 0L
+        var minPrice: BigDecimal? = null
+        var maxPrice: BigDecimal? = null
+
+        fun addTrade(trade: Trade) {
+            totalTicks++
+
+            val price = BigDecimal.valueOf(trade.price)
+            val quantity = BigDecimal.valueOf(trade.quantity)
+
+            // Обновляем min/max цену
+            if (minPrice == null || price < minPrice!!) minPrice = price
+            if (maxPrice == null || price > maxPrice!!) maxPrice = price
+
+            // Получаем или создаём уровень цены
+            val levelData = priceLevels.getOrPut(price) {
+                PriceLevelData(price)
+            }
+
+            // Обновляем объём в зависимости от направления
+            if (trade.isBuy) {
+                levelData.bidVolume = levelData.bidVolume.add(quantity)
+                levelData.bidCount++
+            } else {
+                levelData.askVolume = levelData.askVolume.add(quantity)
+                levelData.askCount++
+            }
+        }
+
+        fun buildArrowData(): ByteBuffer {
+            val childAllocator =
+                this@AggregateProcessor.allocator.newChildAllocator("candle-builder", 0, Long.MAX_VALUE)
+
+            val decimalType = FieldType.nullable(ArrowType.Decimal(38, 8, 128))
+            val intType = FieldType.nullable(ArrowType.Int(32, true))
+
+            // Создаем векторы для Arrow
+            val priceVector = DecimalVector("price", decimalType, childAllocator)
+            val bidVolumeVector = DecimalVector("bid_volume", decimalType, childAllocator)
+            val askVolumeVector = DecimalVector("ask_volume", decimalType, childAllocator)
+            val bidCountVector = IntVector("bid_count", allocator)
+            val askCountVector = IntVector("ask_count", allocator)
+
+            try {
+                // Устанавливаем емкость
+                val size = priceLevels.size
+                priceVector.allocateNew(size)
+                bidVolumeVector.allocateNew(size)
+                askVolumeVector.allocateNew(size)
+                bidCountVector.allocateNew(size)
+                askCountVector.allocateNew(size)
+
+                // Заполняем данные (сортируем по цене)
+                val sortedLevels = priceLevels.values.sortedBy { it.price }
+
+                sortedLevels.forEachIndexed { index, level ->
+                    priceVector.setSafe(index, level.price)
+                    bidVolumeVector.setSafe(index, level.bidVolume)
+                    askVolumeVector.setSafe(index, level.askVolume)
+                    bidCountVector.setSafe(index, level.bidCount)
+                    askCountVector.setSafe(index, level.askCount)
+                }
+
+                // Устанавливаем количество записей
+                priceVector.valueCount = size
+                bidVolumeVector.valueCount = size
+                askVolumeVector.valueCount = size
+                bidCountVector.valueCount = size
+                askCountVector.valueCount = size
+
+                // Создаем Root вектор
+                val root = VectorSchemaRoot.of(
+                    priceVector, bidVolumeVector, askVolumeVector,
+                    bidCountVector, askCountVector
+                )
+
+                // Записываем в ByteArray
+                val outputStream = ByteArrayOutputStream()
+                val writer = ArrowStreamWriter(root, null, Channels.newChannel(outputStream))
+
+                writer.start()
+                writer.writeBatch()
+                writer.end()
+
+                return ByteBuffer.wrap(outputStream.toByteArray())
+
+            } finally {
+                // Освобождаем ресурсы
+                priceVector.close()
+                bidVolumeVector.close()
+                askVolumeVector.close()
+                bidCountVector.close()
+                askCountVector.close()
+                allocator.close()
+                childAllocator.close()
+            }
+        }
+
+        fun buildAggregate(): AggregateCandle {
+            val arrowData = buildArrowData()
+
+            return AggregateCandle(
+                exchange = exchange,
+                symbol = symbol,
+                timeframe = timeframe,
+                startTime = startTime,
+                endTime = endTime,
+                arrowData = arrowData,
+                totalTicks = totalTicks,
+                minPrice = minPrice ?: BigDecimal.ZERO,
+                maxPrice = maxPrice ?: BigDecimal.ZERO,
+                priceLevels = priceLevels.size
+            )
+        }
+    }
+
+    fun processTrade(trade: Trade) {
+        timeframes.forEach { timeframe ->
+            val candleStart = calculateCandleStart(trade.timestamp, timeframe)
+
+            // Получаем или создаем свечу
+            val symbolCandles = activeCandles.getOrPut("${trade.exchange}_${trade.symbol}") {
+                mutableMapOf()
+            }
+
+            var candleBuilder = symbolCandles[timeframe]
+
+            // Если свечи нет или время вышло за пределы текущей свечи
+            if (candleBuilder == null || trade.timestamp >= candleBuilder.endTime) {
+                // Сохраняем предыдущую свечу если она есть
+                if (candleBuilder != null) {
+                    saveAggregate(candleBuilder)
+                }
+
+                // Создаем новую свечу
+                candleBuilder = AggregateCandleBuilder(
+                    exchange = trade.exchange,
+                    symbol = trade.symbol,
+                    timeframe = timeframe,
+                    startTime = candleStart
+                )
+                symbolCandles[timeframe] = candleBuilder
+            }
+
+            // Добавляем сделку в свечу
+            candleBuilder.addTrade(trade)
+        }
+    }
+
+    private fun saveAggregate(builder: AggregateCandleBuilder) {
+        val aggregate = builder.buildAggregate()
+        val fileName = "${builder.exchange}_${builder.symbol}_${builder.timeframe}_" +
+                "${builder.startTime}_${builder.endTime}.arrow"
+        val filePath = Paths.get(outputDir, fileName).toString()
+
+        dao.saveAggregate(aggregate, filePath)
+
+        log.info {
+            "📊 Агрегат сохранен: ${builder.exchange}/${builder.symbol} " +
+                    "${builder.timeframe} (${builder.startTime}-${builder.endTime}) " +
+                    "тиков=${builder.totalTicks}, уровней=${builder.priceLevels.size}"
+        }
+    }
+
+    fun flushAll() {
+        activeCandles.values.forEach { timeframeCandles ->
+            timeframeCandles.values.forEach { candleBuilder ->
+                saveAggregate(candleBuilder)
+            }
+        }
+        activeCandles.clear()
+    }
+
+    companion object {
+        fun calculateCandleStart(timestamp: Long, timeframe: String): Long {
+            val instant = Instant.ofEpochMilli(timestamp)
+            val seconds = instant.epochSecond
+
+            return when (timeframe) {
+                "1m" -> seconds - (seconds % 60)
+                "5m" -> seconds - (seconds % 300)
+                "15m" -> seconds - (seconds % 900)
+                "30m" -> seconds - (seconds % 1800)
+                "1h" -> seconds - (seconds % 3600)
+                "4h" -> seconds - (seconds % 14400)
+                "1d" -> seconds - (seconds % 86400)
+                else -> seconds
+            } * 1000
+        }
+
+        fun calculateEndTime(startTime: Long, timeframe: String): Long {
+            return when (timeframe) {
+                "1m" -> startTime + 60000
+                "5m" -> startTime + 300000
+                "15m" -> startTime + 900000
+                "30m" -> startTime + 1800000
+                "1h" -> startTime + 3600000
+                "4h" -> startTime + 14400000
+                "1d" -> startTime + 86400000
+                else -> startTime + 60000
+            }
+        }
+    }
+}
+
+### FILE: src/main/kotlin/service/BatchProcessor.kt
+package com.aandios.service
+
+import com.aandios.model.Trade
+import com.aandios.storage.postgres.TradeDAO
+import mu.KotlinLogging
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.*
+import java.util.concurrent.ConcurrentHashMap
+
+private val log = KotlinLogging.logger {}
+
+class BatchProcessor(
+    private val dao: TradeDAO,
+    private val batchSize: Int = 1000,
+    private val flushIntervalMs: Long = 1000
+) {
+    private val tradeQueues = ConcurrentHashMap<String, ConcurrentLinkedQueue<Trade>>()
+    private var isRunning = false
+    private var job: Job? = null
+
+    fun start(scope: CoroutineScope) {
+        if (isRunning) return
+
+        isRunning = true
+        job = scope.launch {
+            processBatchLoop()
+        }
+
+        log.info { "✅ BatchProcessor запущен (batchSize=$batchSize, flushIntervalMs=$flushIntervalMs)" }
+    }
+
+    fun addTrade(trade: Trade) {
+        val key = "${trade.exchange}_${trade.symbol}"
+        val queue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
+        queue.add(trade)
+
+        // Если очередь достигла размера батча - немедленная отправка
+        if (queue.size >= batchSize) {
+            flushBatch(key)
+        }
+    }
+
+    fun getQueueSize(instrumentKey: String): Int {
+        return tradeQueues[instrumentKey]?.size ?: 0
+    }
+
+    fun getTotalQueueSize(): Int {
+        return tradeQueues.values.sumOf { it.size }
+    }
+
+    private suspend fun processBatchLoop() {
+        while (isRunning) {
+            delay(flushIntervalMs)
+            tradeQueues.keys.forEach { key ->
+                flushBatch(key)
+            }
+        }
+    }
+
+    private fun flushBatch(key: String) {
+        val queue = tradeQueues[key] ?: return
+        val batch = mutableListOf<Trade>()
+
+        while (batch.size < batchSize && queue.isNotEmpty()) {
+            val trade = queue.poll()
+            if (trade != null) {
+                batch.add(trade)
+            }
+        }
+
+        if (batch.isNotEmpty()) {
+            try {
+                dao.insertRawTradesBatch(batch)
+                log.debug { "✅ Вставлено ${batch.size} тиков в raw_trades для $key" }
+            } catch (e: Exception) {
+                log.error(e) { "❌ Ошибка вставки батча в raw_trades" }
+                // Возвращаем тики обратно в очередь для повторной попытки
+                batch.forEach { trade -> queue.offer(trade) }
+            }
+        }
+
+        // Удаляем пустую очередь
+        if (queue.isEmpty()) {
+            tradeQueues.remove(key)
+        }
+    }
+
+    fun stop() {
+        isRunning = false
+        job?.cancel()
+
+        // Финальный flush оставшихся тиков
+        tradeQueues.keys.forEach { key ->
+            flushBatch(key)
+        }
+
+        log.info { "✅ BatchProcessor остановлен" }
+    }
+}
+
+### FILE: src/main/kotlin/service/ExchangeClient.kt
+package com.aandios.service
+
+import com.aandios.config.ExchangeConfig
+import com.aandios.exchange.ExchangeAdapterFactory
+import io.ktor.client.*
+import io.ktor.client.plugins.websocket.*
+import io.ktor.websocket.*
+import kotlinx.coroutines.*
+import mu.KotlinLogging
+import kotlin.time.Duration.Companion.seconds
+
+private val log = KotlinLogging.logger {}
+
+class ExchangeClient(
+    private val config: ExchangeConfig,
+    private val processor: TradeProcessor
+) {
+    private val adapter = ExchangeAdapterFactory.createAdapter(config.name)
+    private val clients = mutableMapOf<String, HttpClient>()
+    private val clientJobs = mutableListOf<Job>()
+
+    suspend fun start() {
+        log.info { "🔌 Запуск клиента для ${config.name} (${config.symbols.size} пар)" }
+
+        config.symbols.forEach { symbol ->
+            launchClientForSymbol(symbol)
+        }
+    }
+
+    private suspend fun launchClientForSymbol(symbol: String) {
+        val url = adapter.getWebSocketUrl(symbol)
+
+        val client = HttpClient {
+            install(WebSockets) {
+                maxFrameSize = Long.MAX_VALUE
+                pingInterval = 20.seconds
+            }
+        }
+
+        clients[symbol] = client
+
+        val job = CoroutineScope(Dispatchers.IO).launch {
+            connectAndListen(url, symbol, client)
+        }
+        clientJobs.add(job)
+    }
+
+    private suspend fun connectAndListen(url: String, symbol: String, client: HttpClient) {
+        var reconnectAttempts = 0
+        val maxReconnectDelay = 30000L
+
+        while (true) {
+            try {
+                reconnectAttempts++
+                log.info { "${config.name}/$symbol: Попытка подключения #$reconnectAttempts" }
+
+                client.webSocket(url) {
+                    log.info { "✅ ${config.name}/$symbol: WebSocket подключен" }
+
+                    // Отправляем подписку если требуется
+                    adapter.getSubscribeMessage(symbol)?.let { message ->
+                        send(message)
+                        log.debug { "${config.name}/$symbol: Отправлена подписка" }
+                    }
+
+                    reconnectAttempts = 0
+
+                    for (frame in incoming) {
+                        when (frame) {
+                            is Frame.Text -> {
+                                val text = frame.readText()
+
+                                // Фильтруем служебные сообщения
+                                if (!adapter.isTradeMessage(text)) {
+                                    continue
+                                }
+
+                                processor.process(text, config.name, symbol)
+                            }
+                            is Frame.Close -> {
+                                val reason = frame.readReason()?.message ?: "no reason"
+                                log.info { "📴 ${config.name}/$symbol: Соединение закрыто: $reason" }
+                                break
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                val delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
+                log.error(e) {
+                    "❌ ${config.name}/$symbol: Ошибка. Переподключение через ${delayMs/1000}с"
+                }
+                delay(delayMs)
+            }
+        }
+    }
+
+    private fun calculateReconnectDelay(attempt: Int, maxDelay: Long): Long {
+        val delay = 1000L * (1 shl (attempt - 1).coerceAtMost(5))
+        return delay.coerceAtMost(maxDelay)
+    }
+
+    suspend fun stop() {
+        clientJobs.forEach { it.cancel() }
+        clientJobs.clear()
+
+        clients.values.forEach { it.close() }
+        clients.clear()
+
+        log.info { "✅ Клиент ${config.name} остановлен" }
+    }
+}
+
+### FILE: src/main/kotlin/service/MonitoringServer.kt
+package com.aandios.service
+
+import com.aandios.BuildConfig
+import com.aandios.config.ConfigManager
+import com.aandios.storage.postgres.TradeDAO
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.jetty.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.Json
+import mu.KotlinLogging
+
+private val log = KotlinLogging.logger {}
+private val json = Json { prettyPrint = true }
+
+class MonitoringServer(
+    private val port: Int = 8080,
+    private val tradeProcessor: TradeProcessor,
+    private val tradeDAO: TradeDAO,
+) {
+    private var server: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
+
+    //    private var server: JettyApplicationEngine? = null
+    private var serverJob: Job? = null
+
+    fun start() {
+        serverJob = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Создаем сервер
+                val engine = embeddedServer(Jetty, port = port) {
+                    install(ContentNegotiation) {
+                        json(json)
+                    }
+
+                    routing {
+                        get("/") {
+                            call.respondText(
+                                """
+                                📊 TradeCollectorService Monitoring
+                                ================================
+                                
+                                Endpoints:
+                                • /health     - Проверка работоспособности
+                                • /metrics    - Метрики производительности  
+                                • /status     - Детальный статус сервиса
+                                • /exchanges  - Список подключенных бирж
+                                
+                                Version: ${BuildConfig.VERSION}
+                                """.trimIndent()
+                            )
+                        }
+
+                        get("/health") {
+                            call.respond(
+                                mapOf(
+                                    "status" to "healthy",
+                                    "timestamp" to System.currentTimeMillis(),
+                                    "service" to "TradeCollectorService",
+                                    "version" to BuildConfig.VERSION
+                                )
+                            )
+                        }
+
+                        get("/metrics") {
+                            val metrics = tradeProcessor.getMetrics()
+                            call.respond(metrics)
+                        }
+
+                        get("/status") {
+                            val config = ConfigManager.getConfig()
+                            val metrics = tradeProcessor.getMetrics()
+                            val memory = Runtime.getRuntime()
+
+                            val status = mapOf(
+                                "service" to "TradeCollectorService",
+                                "version" to BuildConfig.VERSION,
+                                "timestamp" to System.currentTimeMillis(),
+                                "uptime" to "TODO",
+                                "metrics" to metrics,
+                                "exchanges" to config.exchanges.map { it.name },
+                                "memory" to mapOf(
+                                    "totalMB" to memory.totalMemory() / 1024 / 1024,
+                                    "freeMB" to memory.freeMemory() / 1024 / 1024,
+                                    "maxMB" to memory.maxMemory() / 1024 / 1024
+                                ),
+                                "threads" to Thread.activeCount()
+                            )
+                            call.respond(status)
+                        }
+
+                        get("/exchanges") {
+                            val config = ConfigManager.getConfig()
+                            call.respond(config.exchanges)
+                        }
+                        get("/database/stats") {
+                            val stats = tradeDAO.getDatabaseStats()
+                            call.respond(
+                                mapOf(
+                                    "database" to "PostgreSQL",
+                                    "stats" to stats,
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Сохраняем ссылку на engine
+                server = engine
+
+                // Запускаем сервер
+                engine.start(wait = true)
+
+            } catch (e: Exception) {
+                log.error(e) { "❌ Ошибка при запуске сервера мониторинга" }
+            }
+        }
+
+        log.info { "🌐 Сервер мониторинга запускается на порту $port" }
+    }
+
+    suspend fun stop() {
+        serverJob?.cancel()
+        server?.stop(1000, 5000)
+        server = null
+        log.info { "🌐 Сервер мониторинга остановлен" }
+    }
+}
 
 ### FILE: src/main/kotlin/service/TradeCollectorService.kt
 package com.aandios.service
 
-import kotlinx.coroutines.delay
+import com.aandios.config.AppConfig
+import com.aandios.storage.postgres.TradeDAO
+import kotlinx.coroutines.*
+import mu.KotlinLogging
+import java.util.concurrent.atomic.AtomicBoolean
+
+private val log = KotlinLogging.logger {}
 
 class TradeCollectorService(
-    private val webSocketClient: WebSocketClient,
-    private val tradeProcessor: TradeProcessor
+    private val dao: TradeDAO,
+    private val config: AppConfig
 ) {
+    private val isRunning = AtomicBoolean(false)
+    private val exchangeClients = mutableListOf<ExchangeClient>()
+    private var tradeProcessor: TradeProcessor? = null
+    private var monitoringServer: MonitoringServer? = null
+    private var serviceJob: Job? = null
+    private var coroutineScope: CoroutineScope? = null
+
     suspend fun start() {
-        while (true) {
-            try {
-                webSocketClient.connectAndListen { json ->
-                    tradeProcessor.process(json)
+        if (isRunning.getAndSet(true)) {
+            log.warn { "⚠️ Сервис уже запущен" }
+            return
+        }
+
+        try {
+            log.info { "🔧 Инициализация TradeCollectorService..." }
+
+            coroutineScope = CoroutineScope(Dispatchers.Default)
+
+            // Инициализация процессора
+            tradeProcessor = TradeProcessor(dao, config.processor)
+            tradeProcessor!!.initialize(coroutineScope!!)
+
+            // Создание клиентов для бирж
+            config.exchanges.filter { it.enabled }.forEach { exchangeConfig ->
+                val client = ExchangeClient(exchangeConfig, tradeProcessor!!)
+                exchangeClients.add(client)
+            }
+
+            log.info { "✅ Создано клиентов: ${exchangeClients.size}" }
+
+            // Запуск мониторинга
+            if (config.monitoring.enableMetrics) {
+                monitoringServer = MonitoringServer(
+                    port = config.monitoring.httpPort,
+                    tradeProcessor = tradeProcessor!!,
+                    tradeDAO = dao,
+                )
+                monitoringServer?.start()
+            }
+
+            // Запуск всех клиентов
+            exchangeClients.forEach { client ->
+                coroutineScope!!.launch {
+                    try {
+                        client.start()
+                    } catch (e: Exception) {
+                        log.error(e) { "❌ Ошибка при запуске клиента" }
+                    }
                 }
+            }
+
+            // Основной цикл мониторинга
+            serviceJob = coroutineScope!!.launch {
+                while (isRunning.get()) {
+                    delay(10000) // Каждые 10 секунд
+                    logStatus()
+                }
+            }
+
+            log.info { "✅ Сервис успешно запущен" }
+
+        } catch (e: Exception) {
+            log.error(e) { "❌ Ошибка при запуске сервиса" }
+            stop()
+        }
+    }
+
+    private fun logStatus() {
+        val metrics = tradeProcessor?.getMetrics() ?: emptyMap()
+        val memory = Runtime.getRuntime()
+
+        log.info {
+            """
+            📊 === Статус сервиса ===
+            📈 Обработано тиков: ${metrics["totalTrades"] ?: 0}
+            ⚡ TPS: ${metrics["tradesPerSecond"] ?: 0}
+            📦 Очередь БД: ${metrics["batchQueueSize"] ?: 0}
+            🔌 Клиентов: ${exchangeClients.size}
+            💾 Память: ${memory.totalMemory() / 1024 / 1024} MB
+            🆓 Свободно: ${memory.freeMemory() / 1024 / 1024} MB
+            =====================
+            """.trimIndent()
+        }
+    }
+
+    suspend fun stop() {
+        if (!isRunning.getAndSet(false)) {
+            return
+        }
+
+        log.info { "🛑 Остановка TradeCollectorService..." }
+
+        // Остановка процессора
+        tradeProcessor?.shutdown()
+
+        // Остановка клиентов
+        exchangeClients.forEach { client ->
+            try {
+                client.stop()
             } catch (e: Exception) {
-                println("Connection lost, reconnecting in 5s")
-                e.printStackTrace()
-                delay(5000)
+                log.error(e) { "⚠️ Ошибка при остановке клиента" }
             }
         }
+        exchangeClients.clear()
+
+        // Остановка мониторинга
+        monitoringServer?.stop()
+
+        // Отмена задач
+        serviceJob?.cancel()
+        serviceJob = null
+
+        coroutineScope?.cancel()
+        coroutineScope = null
+
+        tradeProcessor = null
+        monitoringServer = null
+
+        log.info { "✅ Сервис остановлен" }
+    }
+
+    fun isRunning(): Boolean = isRunning.get()
+
+    fun getMetrics(): Map<String, Any> {
+        val processorMetrics = tradeProcessor?.getMetrics() ?: emptyMap()
+
+        return processorMetrics + mapOf(
+            "exchangeClients" to exchangeClients.size,
+            "isRunning" to isRunning.get(),
+            "memoryUsedMB" to Runtime.getRuntime().totalMemory() / 1024 / 1024,
+            "memoryFreeMB" to Runtime.getRuntime().freeMemory() / 1024 / 1024
+        )
     }
 }
 
 ### FILE: src/main/kotlin/service/TradeProcessor.kt
 package com.aandios.service
 
-import com.aandios.model.Trade
-import com.aandios.storage.TradeDAO
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.aandios.config.ProcessorConfig
+import com.aandios.exchange.ExchangeAdapter
+import com.aandios.exchange.ExchangeAdapterFactory
+import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
+import java.time.Instant
+import kotlinx.coroutines.*
+import java.math.BigDecimal
+
 private val log = KotlinLogging.logger {}
 
 class TradeProcessor(
-//    private val tradeDAO: TradeDAO
+    private val dao: TradeDAO,
+    private val config: ProcessorConfig = ProcessorConfig()
 ) {
-    private val mapper = jacksonObjectMapper()
+    private lateinit var batchProcessor: BatchProcessor
+    private lateinit var volumeFilterProcessor: VolumeFilterProcessor
+    private lateinit var aggregateProcessor: AggregateProcessor
+    private var coroutineScope: CoroutineScope? = null
 
-    fun process(json: String) {
+    // Метрики
+    private var totalTrades = 0L
+    private var tradesPerSecond = 0
+    private var lastSecond = Instant.now().epochSecond
+    private var lastTotalTrades = 0L
+    private var lastCleanupTime = System.currentTimeMillis()
+
+    // Статистика по инструментам
+    private val instrumentStats = mutableMapOf<String, InstrumentStats>()
+    private val adapterCache = mutableMapOf<String, ExchangeAdapter>()
+
+//    data class ProcessorConfig(
+//        val batchSize: Int = 1000,
+//        val flushIntervalMs: Long = 1000,
+//        val windowSize: Int = 1000000,
+//        val slideStep: Int = 100000,
+//        val filterPercentile: Double = 0.98,
+//        val timeframes: List<String> = listOf("1m", "5m", "1h"),
+//        val aggregatesOutputDir: String = "./aggregates"
+//    )
+
+    data class InstrumentStats(
+        var totalTrades: Long = 0,
+        var lastTradeTime: Long = 0,
+        var batchQueueSize: Int = 0
+    )
+
+    fun initialize(scope: CoroutineScope) {
+        this.coroutineScope = scope
+
+        // Инициализация компонентов
+        batchProcessor = BatchProcessor(dao, config.batchSize, config.flushIntervalMs)
+        batchProcessor.start(scope)
+
+        volumeFilterProcessor = VolumeFilterProcessor(
+            dao = dao,
+            windowSize = config.windowSize,
+            slideStep = config.slideStep,
+            filterPercentile = config.filterPercentile
+        )
+
+        aggregateProcessor = AggregateProcessor(
+            dao = dao,
+            timeframes = config.timeframes,
+            outputDir = config.aggregatesOutputDir
+        )
+
+        log.info {
+            "✅ TradeProcessor инициализирован: " +
+                    "batchSize=${config.batchSize}, " +
+                    "windowSize=${config.windowSize}, " +
+                    "percentile=${config.filterPercentile}"
+        }
+    }
+
+    fun process(json: String, exchange: String, symbol: String) {
         try {
-            val tradeData = mapper.readTree(json)
-            val trade = Trade(
-                timestamp = tradeData["T"].asLong(),
-                price = tradeData["p"].asDouble(),
-                quantity = tradeData["q"].asDouble(),
-                direction = !tradeData["m"].asBoolean() // true = bid, false = ask
-            )
-//            tradeDAO.insert(trade)
-            log.info { "Trade: ${trade.timestamp}, ${trade.price}, ${trade.quantity}, ${if (trade.direction) "bid" else "ask"}" }
+            val adapter = getAdapter(exchange)
+            val trade = adapter.parseTrade(json, symbol)
+
+            if (trade != null) {
+                totalTrades++
+                updateTps()
+
+                // Инициализация статистики инструмента
+                val instrumentKey = "${exchange}_${symbol}"
+                val stats = instrumentStats.getOrPut(instrumentKey) { InstrumentStats() }
+                stats.totalTrades++
+                stats.lastTradeTime = System.currentTimeMillis()
+
+                // 1. Сохраняем в raw_trades (батчами)
+                batchProcessor.addTrade(trade)
+                stats.batchQueueSize = batchProcessor.getQueueSize(instrumentKey)
+
+                // 2. Обрабатываем для фильтрации больших сделок
+                volumeFilterProcessor.processTrade(trade)
+
+                // 3. Обрабатываем для агрегации в свечи
+                aggregateProcessor.processTrade(trade)
+
+                // Логируем каждые 100 тиков
+                if (totalTrades % 100 == 0L) {
+                    val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
+                    log.debug {
+                        "📊 Обработано: $totalTrades (${tradesPerSecond}/с) | " +
+                                "${exchange}/${trade.symbol}: ${trade.price} | " +
+                                "Объём: ${volumeUsd} USD | " +
+                                "Очередь: ${stats.batchQueueSize}"
+                    }
+                }
+
+                // Периодические операции
+                val now = System.currentTimeMillis()
+                if (now - lastCleanupTime > 5 * 60 * 1000) { // Каждые 5 минут
+                    cleanupOldData()
+                    lastCleanupTime = now
+                }
+
+                // Флаш агрегатов каждые 10 минут
+                if (now % (10 * 60 * 1000) < 1000) {
+                    aggregateProcessor.flushAll()
+                }
+            }
         } catch (e: Exception) {
-            println("Error processing trade: $e")
+            log.error(e) { "❌ Ошибка обработки $exchange/$symbol" }
+        }
+    }
+
+    private fun getAdapter(exchange: String): ExchangeAdapter {
+        return adapterCache.getOrPut(exchange) {
+            ExchangeAdapterFactory.createAdapter(exchange)
+        }
+    }
+
+    private fun updateTps() {
+        val currentSecond = Instant.now().epochSecond
+        if (currentSecond != lastSecond) {
+            tradesPerSecond = (totalTrades - lastTotalTrades).toInt()
+            lastTotalTrades = totalTrades
+            lastSecond = currentSecond
+        }
+    }
+
+    private fun cleanupOldData() {
+        try {
+            // Очищаем сырые сделки (храним только ~1 миллион)
+            val deletedCount = dao.cleanupOldRawTrades()
+            if (deletedCount > 0) {
+                log.info { "🧹 Очищено $deletedCount старых записей из raw_trades" }
+            }
+        } catch (e: Exception) {
+            log.error(e) { "❌ Ошибка очистки старых данных" }
+        }
+    }
+
+    fun getMetrics(): Map<String, Any> {
+        val filterStats = volumeFilterProcessor.getStats()
+
+        return mapOf(
+            "totalTrades" to totalTrades,
+            "tradesPerSecond" to tradesPerSecond,
+            "batchQueueSize" to batchProcessor.getTotalQueueSize(),
+            "instruments" to instrumentStats.size,
+            "filterStats" to filterStats,
+            "timestamp" to System.currentTimeMillis()
+        )
+    }
+
+    fun getDatabaseDAO(): TradeDAO = dao
+
+    fun getVolumeFilterProcessor(): VolumeFilterProcessor = volumeFilterProcessor
+
+    fun getAggregateProcessor(): AggregateProcessor = aggregateProcessor
+
+    fun shutdown() {
+        batchProcessor.stop()
+        aggregateProcessor.flushAll()
+        log.info { "✅ TradeProcessor остановлен" }
+    }
+}
+
+### FILE: src/main/kotlin/service/VolumeFilterProcessor.kt
+package com.aandios.service
+
+import com.aandios.model.*
+import com.aandios.storage.postgres.TradeDAO
+import mu.KotlinLogging
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.util.*
+import kotlin.math.sqrt
+
+private val log = KotlinLogging.logger {}
+
+class VolumeFilterProcessor(
+    private val dao: TradeDAO,
+    private val windowSize: Int = 1000000,
+    private val slideStep: Int = 100000,
+    private val filterPercentile: Double = 0.98
+) {
+    private val slidingWindows = mutableMapOf<String, SlidingWindowStats>() // ключ: "exchange_symbol"
+    private val processedTrades = mutableMapOf<String, Long>() // для отслеживания прогресса
+
+    data class SlidingWindowStats(
+        val exchange: String,
+        val symbol: String,
+        var startIndex: Long = 0,
+        var volumes: LinkedList<BigDecimal> = LinkedList(),
+        var sortedVolumes: MutableList<BigDecimal> = mutableListOf(),
+        var totalTrades: Int = 0,
+        var windowStartTime: Long = 0,
+        var windowEndTime: Long = 0,
+        var volumeThreshold: BigDecimal = BigDecimal.ZERO
+    )
+
+    fun processTrade(trade: Trade) {
+        val key = "${trade.exchange}_${trade.symbol}"
+
+        // Инициализируем окно если нужно
+        if (!slidingWindows.containsKey(key)) {
+            slidingWindows[key] = SlidingWindowStats(
+                exchange = trade.exchange,
+                symbol = trade.symbol,
+                windowStartTime = trade.timestamp
+            )
+            processedTrades[key] = 0L
+        }
+
+        val window = slidingWindows[key]!!
+
+        // Добавляем объём в окно
+        val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
+        window.volumes.add(volumeUsd)
+        window.totalTrades++
+        window.windowEndTime = trade.timestamp
+
+        // Поддерживаем размер окна
+        if (window.volumes.size > windowSize) {
+            window.volumes.removeFirst()
+            window.startIndex++
+        }
+
+        // Обновляем обработанные сделки
+        processedTrades[key] = processedTrades[key]!! + 1
+
+        // Проверяем нужно ли сдвинуть окно и пересчитать статистику
+        if (shouldRecalculateWindow(key)) {
+            recalculateWindowStats(window)
+            checkAndSaveFilteredTrade(trade, window, volumeUsd)
+        }
+    }
+
+    private fun shouldRecalculateWindow(key: String): Boolean {
+        val processedCount = processedTrades[key] ?: 0
+        return processedCount % slideStep == 0L
+    }
+
+    private fun recalculateWindowStats(window: SlidingWindowStats) {
+        if (window.volumes.isEmpty()) return
+
+        // Копируем и сортируем объёмы
+        window.sortedVolumes = window.volumes.sorted().toMutableList()
+
+        // Рассчитываем статистику
+        val size = window.sortedVolumes.size
+
+        // Базовые статистики
+        val minVolume = window.sortedVolumes.first()
+        val maxVolume = window.sortedVolumes.last()
+        val sumVolume = window.sortedVolumes.sumOf { it }
+        val avgVolume = sumVolume.divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
+
+        // Медиана
+        val medianVolume = if (size % 2 == 0) {
+            val mid = size / 2
+            window.sortedVolumes[mid - 1].add(window.sortedVolumes[mid])
+                .divide(BigDecimal.valueOf(2), 8, RoundingMode.HALF_UP)
+        } else {
+            window.sortedVolumes[size / 2]
+        }
+
+        // Стандартное отклонение
+        // Стандартное отклонение
+        val variance = window.sortedVolumes
+            .map { it.subtract(avgVolume).pow(2) }
+            .sumOf { it }
+            .divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
+
+        val stddevVolume = if (variance >= BigDecimal.ZERO) {
+            BigDecimal.valueOf(kotlin.math.sqrt(variance.toDouble()))
+        } else {
+            BigDecimal.ZERO
+        }
+
+        if (size == 0) {
+            log.warn { "Пустое окно для ${window.exchange}/${window.symbol}" }
+            return
+        }
+
+        // Перцентили
+        val p50Index = (size * 0.5).toInt().coerceAtMost(size - 1)
+        val p95Index = (size * 0.95).toInt().coerceAtMost(size - 1)
+        val p98Index = (size * filterPercentile).toInt().coerceAtMost(size - 1)
+        val p99Index = (size * 0.99).toInt().coerceAtMost(size - 1)
+
+        val p50Volume = window.sortedVolumes[p50Index]
+        val p95Volume = window.sortedVolumes[p95Index]
+        val p98Volume = window.sortedVolumes[p98Index]
+        val p99Volume = window.sortedVolumes[p99Index]
+
+        // Порог фильтрации
+        val thresholdIndex = (size * filterPercentile).toInt().coerceAtMost(size - 1)
+        val volumeThreshold = window.sortedVolumes[thresholdIndex]
+        window.volumeThreshold = volumeThreshold
+
+        // Сохраняем статистику окна в БД
+        val volumeWindow = VolumeWindow(
+            exchange = window.exchange,
+            symbol = window.symbol,
+            startTime = window.windowStartTime,
+            endTime = window.windowEndTime,
+            totalTrades = window.totalTrades,
+            minVolume = minVolume,
+            maxVolume = maxVolume,
+            avgVolume = avgVolume,
+            medianVolume = medianVolume,
+            stddevVolume = stddevVolume,
+            p50Volume = p50Volume,
+            p95Volume = p95Volume,
+            p98Volume = p98Volume,
+            p99Volume = p99Volume,
+            filterPercentile = filterPercentile,
+            filterThreshold = volumeThreshold
+        )
+
+        dao.saveVolumeWindow(volumeWindow)
+
+        log.debug {
+            "📊 Окно ${window.exchange}/${window.symbol}: " +
+                    "trades=${window.totalTrades}, " +
+                    "threshold=${volumeThreshold.toDouble()} USD, " +
+                    "98p=${p98Volume.toDouble()} USD"
+        }
+    }
+
+    private fun checkAndSaveFilteredTrade(
+        trade: Trade,
+        window: SlidingWindowStats,
+        volumeUsd: BigDecimal
+    ) {
+        if (window.volumeThreshold == BigDecimal.ZERO) return
+
+        // Проверяем превышает ли сделка порог
+        if (volumeUsd >= window.volumeThreshold) {
+            // Определяем категорию
+            val category = when {
+                volumeUsd >= window.sortedVolumes[(window.sortedVolumes.size * 0.995).toInt()] ->
+                    TradeCategory.WHALE
+
+                volumeUsd >= window.sortedVolumes[(window.sortedVolumes.size * 0.99).toInt()] ->
+                    TradeCategory.VERY_LARGE
+
+                else -> TradeCategory.LARGE
+            }
+
+            val filteredTrade = FilteredTrade(
+                trade = trade,
+                volumeUsd = volumeUsd,
+                percentileThreshold = filterPercentile,
+                volumeThreshold = window.volumeThreshold,
+                tradeCategory = category,
+                windowStartTime = window.windowStartTime,
+                windowEndTime = window.windowEndTime,
+                windowTotalTrades = window.totalTrades
+            )
+
+            // Сохраняем фильтрованную сделку
+            dao.insertFilteredTrade(filteredTrade)
+
+            log.info {
+                "🎯 Большая сделка ${trade.exchange}/${trade.symbol}: " +
+                        "${category.name} ${volumeUsd.toDouble()} USD > ${window.volumeThreshold.toDouble()} USD"
+            }
+        }
+    }
+
+    fun getStats(): Map<String, Any> {
+        return slidingWindows.mapValues { (key, window) ->
+            mapOf(
+                "totalTrades" to window.totalTrades,
+                "windowSize" to window.volumes.size,
+                "volumeThreshold" to window.volumeThreshold.toDouble(),
+                "processedTrades" to (processedTrades[key] ?: 0L)
+            )
         }
     }
 }
 
-### FILE: src/main/kotlin/service/WebSocketClient.kt
-package com.aandios.service
+### FILE: src/main/kotlin/storage/postgres/PostgresTradeDAO.kt
+//package com.aandios.storage.postgres
+//
+//import com.aandios.model.Trade
+//import com.zaxxer.hikari.HikariConfig
+//import com.zaxxer.hikari.HikariDataSource
+//import mu.KotlinLogging
+//
+//private val log = KotlinLogging.logger {}
+//
+//class PostgresTradeDAO {
+//    private val dataSource: HikariDataSource
+//
+//    init {
+//        val config = HikariConfig().apply {
+//            jdbcUrl = "jdbc:postgresql://localhost:6432/trade_collector"
+//            username = "trade_user"
+//            password = "strong_password_here"
+//            maximumPoolSize = 10
+//            minimumIdle = 2
+//            connectionTimeout = 30000
+//            idleTimeout = 600000
+//            maxLifetime = 1800000
+//            poolName = "TradePool"
+//
+//            // Оптимизация для массовой вставки
+//            addDataSourceProperty("reWriteBatchedInserts", "true")
+//            addDataSourceProperty("preparedStatementCacheQueries", "1024")
+//            addDataSourceProperty("preparedStatementCacheSizeMiB", "32")
+//            addDataSourceProperty("tcpKeepAlive", "true")
+//        }
+//
+//        dataSource = HikariDataSource(config)
+//        log.info { "✅ PostgreSQL DAO инициализирован" }
+//    }
+//
+//    fun insertRawTick(trade: Trade) {
+//        dataSource.connection.use { conn ->
+//            conn.prepareStatement("""
+//                INSERT INTO raw_ticks
+//                (exchange, symbol, timestamp, price, quantity, is_buy)
+//                VALUES (?, ?, ?, ?, ?, ?)
+//            """).use { stmt ->
+//                stmt.setString(1, trade.exchange)
+//                stmt.setString(2, trade.symbol)
+//                stmt.setLong(3, trade.timestamp)
+//                stmt.setBigDecimal(4, trade.price.toBigDecimal())
+//                stmt.setBigDecimal(5, trade.quantity.toBigDecimal())
+//                stmt.setBoolean(6, trade.isBuy)
+//                stmt.execute()
+//            }
+//        }
+//    }
+//
+//    fun insertRawTickBatch(trades: List<Trade>) {
+//        if (trades.isEmpty()) return
+//
+//        dataSource.connection.use { conn ->
+//            conn.autoCommit = false
+//            conn.prepareStatement("""
+//                INSERT INTO raw_ticks
+//                (exchange, symbol, timestamp, price, quantity, is_buy)
+//                VALUES (?, ?, ?, ?, ?, ?)
+//            """).use { stmt ->
+//                trades.forEach { trade ->
+//                    stmt.setString(1, trade.exchange)
+//                    stmt.setString(2, trade.symbol)
+//                    stmt.setLong(3, trade.timestamp)
+//                    stmt.setBigDecimal(4, trade.price.toBigDecimal())
+//                    stmt.setBigDecimal(5, trade.quantity.toBigDecimal())
+//                    stmt.setBoolean(6, trade.isBuy)
+//                    stmt.addBatch()
+//                }
+//                stmt.executeBatch()
+//                conn.commit()
+//            }
+//        }
+//    }
+//
+//    fun insertFilteredTick(trade: Trade, threshold: Double, percentile: Double) {
+//        dataSource.connection.use { conn ->
+//            conn.prepareStatement("""
+//                INSERT INTO filtered_ticks
+//                (exchange, symbol, timestamp, price, quantity, is_buy,
+//                 volume_usd, threshold_value, threshold_percentile)
+//                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+//            """).use { stmt ->
+//                stmt.setString(1, trade.exchange)
+//                stmt.setString(2, trade.symbol)
+//                stmt.setLong(3, trade.timestamp)
+//                stmt.setBigDecimal(4, trade.price.toBigDecimal())
+//                stmt.setBigDecimal(5, trade.quantity.toBigDecimal())
+//                stmt.setBoolean(6, trade.isBuy)
+//
+//                // Рассчитываем объём в USD
+//                val volumeUsd = trade.price * trade.quantity
+//                stmt.setBigDecimal(7, volumeUsd.toBigDecimal())
+//                stmt.setBigDecimal(8, threshold.toBigDecimal())
+//                stmt.setBigDecimal(9, percentile.toBigDecimal())
+//
+//                stmt.execute()
+//            }
+//        }
+//    }
+//
+//    fun registerAggregateFile(
+//        exchange: String,
+//        symbol: String,
+//        timeframe: String,
+//        startTime: Long,
+//        endTime: Long,
+//        filePath: String,
+//        fileSize: Long,
+//        candleCount: Int,
+//        totalTrades: Long
+//    ) {
+//        dataSource.connection.use { conn ->
+//            conn.prepareStatement("""
+//                INSERT INTO aggregates
+//                (exchange, symbol, timeframe, start_time, end_time,
+//                 file_path, file_size, candle_count, total_trades)
+//                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+//            """).use { stmt ->
+//                stmt.setString(1, exchange)
+//                stmt.setString(2, symbol)
+//                stmt.setString(3, timeframe)
+//                stmt.setLong(4, startTime)
+//                stmt.setLong(5, endTime)
+//                stmt.setString(6, filePath)
+//                stmt.setLong(7, fileSize)
+//                stmt.setInt(8, candleCount)
+//                stmt.setLong(9, totalTrades)
+//                stmt.execute()
+//            }
+//        }
+//    }
+//
+//    fun cleanupOldTicks(daysToKeep: Int): Int {
+//        val cutoffTime = System.currentTimeMillis() - (daysToKeep * 24 * 60 * 60 * 1000L)
+//
+//        return dataSource.connection.use { conn ->
+//            conn.prepareStatement("""
+//                DELETE FROM raw_ticks
+//                WHERE timestamp < ?
+//            """).use { stmt ->
+//                stmt.setLong(1, cutoffTime)
+//                stmt.executeUpdate()
+//            }
+//        }
+//    }
+//
+//    fun getDatabaseStats(): Map<String, Any> {
+//        return dataSource.connection.use { conn ->
+//            conn.prepareStatement("""
+//                SELECT
+//                    (SELECT COUNT(*) FROM raw_ticks) as raw_count,
+//                    (SELECT COUNT(*) FROM filtered_ticks) as filtered_count,
+//                    (SELECT COUNT(*) FROM aggregates) as aggregates_count,
+//                    pg_database_size('trade_collector') as db_size_bytes,
+//                    (SELECT MAX(timestamp) FROM raw_ticks) as latest_tick
+//            """).use { stmt ->
+//                val rs = stmt.executeQuery()
+//                if (rs.next()) {
+//                    mapOf(
+//                        "rawTicks" to rs.getLong("raw_count"),
+//                        "filteredTicks" to rs.getLong("filtered_count"),
+//                        "aggregates" to rs.getInt("aggregates_count"),
+//                        "dbSizeMB" to rs.getLong("db_size_bytes") / 1024 / 1024,
+//                        "latestTick" to rs.getLong("latest_tick")
+//                    )
+//                } else {
+//                    emptyMap()
+//                }
+//            }
+//        }
+//    }
+//
+//    fun shutdown() {
+//        dataSource.close()
+//        log.info { "✅ PostgreSQL DAO остановлен" }
+//    }
+//}
 
-import io.ktor.client.*
-import io.ktor.client.plugins.websocket.*
-import io.ktor.websocket.*
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+### FILE: src/main/kotlin/storage/postgres/TradeDAO.kt
+package com.aandios.storage.postgres
 
-class WebSocketClient(
-    private val url: String,
+import com.aandios.config.DatabaseConfig
+import com.aandios.model.*
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
+import mu.KotlinLogging
+import java.math.BigDecimal
+import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.*
+
+private val log = KotlinLogging.logger {}
+
+class TradeDAO(
+    private val dataSource: HikariDataSource
 ) {
-    private val client = HttpClient {
-        install(WebSockets)
+    companion object {
+        fun createDataSource(config: DatabaseConfig): HikariDataSource {
+            val hikariConfig = HikariConfig().apply {
+                jdbcUrl = "jdbc:postgresql://${config.host}:${config.port}/${config.database}"
+                username = config.username
+                password = config.password
+                maximumPoolSize = 15
+                minimumIdle = 5
+                connectionTimeout = 30000
+                idleTimeout = 600000
+                maxLifetime = 1800000
+                poolName = "TradePool"
+
+                // Оптимизация для массовой вставки
+                addDataSourceProperty("reWriteBatchedInserts", "true")
+                addDataSourceProperty("preparedStatementCacheQueries", "1024")
+                addDataSourceProperty("preparedStatementCacheSizeMiB", "32")
+                addDataSourceProperty("tcpKeepAlive", "true")
+            }
+
+            return HikariDataSource(hikariConfig)
+        }
     }
 
-    suspend fun connectAndListen(onMessage: (json: String)->Unit) {
-        client.webSocket(url) {
-            launch {
-                for (frame in incoming) {
-                    if (frame is Frame.Text) {
-                        onMessage(frame.readText())
-                    }
+    // ========== RAW TRADES ==========
+
+    fun insertRawTrade(trade: Trade) {
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                INSERT INTO raw_trades 
+                (exchange, symbol, timestamp, price, quantity, is_buy)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """).use { stmt ->
+                stmt.setString(1, trade.exchange)
+                stmt.setString(2, trade.symbol)
+                stmt.setLong(3, trade.timestamp)
+                stmt.setBigDecimal(4, BigDecimal.valueOf(trade.price))
+                stmt.setBigDecimal(5, BigDecimal.valueOf(trade.quantity))
+                stmt.setBoolean(6, trade.isBuy)
+                stmt.execute()
+            }
+        }
+    }
+
+    fun insertRawTradesBatch(trades: List<Trade>) {
+        if (trades.isEmpty()) return
+
+        dataSource.connection.use { conn ->
+            conn.autoCommit = false
+            conn.prepareStatement("""
+                INSERT INTO raw_trades 
+                (exchange, symbol, timestamp, price, quantity, is_buy)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """).use { stmt ->
+                trades.forEach { trade ->
+                    stmt.setString(1, trade.exchange)
+                    stmt.setString(2, trade.symbol)
+                    stmt.setLong(3, trade.timestamp)
+                    stmt.setBigDecimal(4, BigDecimal.valueOf(trade.price))
+                    stmt.setBigDecimal(5, BigDecimal.valueOf(trade.quantity))
+                    stmt.setBoolean(6, trade.isBuy)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+                conn.commit()
+            }
+        }
+    }
+
+    fun getRecentRawTrades(
+        exchange: String,
+        symbol: String,
+        limit: Int = 1000000
+    ): List<Trade> {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT exchange, symbol, timestamp, price, quantity, is_buy
+                FROM raw_trades 
+                WHERE exchange = ? AND symbol = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """).use { stmt ->
+                stmt.setString(1, exchange)
+                stmt.setString(2, symbol)
+                stmt.setInt(3, limit)
+
+                val rs = stmt.executeQuery()
+                val trades = mutableListOf<Trade>()
+
+                while (rs.next()) {
+                    trades.add(Trade.fromRaw(
+                        exchange = rs.getString("exchange"),
+                        symbol = rs.getString("symbol"),
+                        timestamp = rs.getLong("timestamp"),
+                        price = rs.getBigDecimal("price"),
+                        quantity = rs.getBigDecimal("quantity"),
+                        isBuy = rs.getBoolean("is_buy")
+                    ))
+                }
+                trades.reversed() // возвращаем в хронологическом порядке
+            }
+        }
+    }
+
+    fun getRawTradesCount(exchange: String, symbol: String): Long {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT COUNT(*) as count 
+                FROM raw_trades 
+                WHERE exchange = ? AND symbol = ?
+            """).use { stmt ->
+                stmt.setString(1, exchange)
+                stmt.setString(2, symbol)
+
+                val rs = stmt.executeQuery()
+                if (rs.next()) rs.getLong("count") else 0L
+            }
+        }
+    }
+
+    fun cleanupOldRawTrades(): Int {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("SELECT cleanup_old_raw_trades() as deleted").use { stmt ->
+                val rs = stmt.executeQuery()
+                if (rs.next()) rs.getInt("deleted") else 0
+            }
+        }
+    }
+
+    // ========== FILTERED TRADES ==========
+
+    fun insertFilteredTrade(filteredTrade: FilteredTrade) {
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                INSERT INTO filtered_trades 
+                (exchange, symbol, timestamp, price, quantity, is_buy,
+                 volume_usd, percentile_threshold, volume_threshold, trade_category,
+                 window_start_time, window_end_time, window_total_trades, batch_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """).use { stmt ->
+                val trade = filteredTrade.trade
+                stmt.setString(1, trade.exchange)
+                stmt.setString(2, trade.symbol)
+                stmt.setLong(3, trade.timestamp)
+                stmt.setBigDecimal(4, BigDecimal.valueOf(trade.price))
+                stmt.setBigDecimal(5, BigDecimal.valueOf(trade.quantity))
+                stmt.setBoolean(6, trade.isBuy)
+                stmt.setBigDecimal(7, filteredTrade.volumeUsd)
+                stmt.setDouble(8, filteredTrade.percentileThreshold)
+                stmt.setBigDecimal(9, filteredTrade.volumeThreshold)
+                stmt.setString(10, filteredTrade.tradeCategory?.name)
+                stmt.setLong(11, filteredTrade.windowStartTime)
+                stmt.setLong(12, filteredTrade.windowEndTime)
+                stmt.setInt(13, filteredTrade.windowTotalTrades)
+                stmt.setObject(14, UUID.randomUUID())
+
+                stmt.execute()
+            }
+        }
+    }
+
+    fun insertFilteredTradesBatch(filteredTrades: List<FilteredTrade>) {
+        if (filteredTrades.isEmpty()) return
+
+        val batchId = UUID.randomUUID()
+
+        dataSource.connection.use { conn ->
+            conn.autoCommit = false
+            conn.prepareStatement("""
+                INSERT INTO filtered_trades 
+                (exchange, symbol, timestamp, price, quantity, is_buy,
+                 volume_usd, percentile_threshold, volume_threshold, trade_category,
+                 window_start_time, window_end_time, window_total_trades, batch_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """).use { stmt ->
+                filteredTrades.forEach { filteredTrade ->
+                    val trade = filteredTrade.trade
+                    stmt.setString(1, trade.exchange)
+                    stmt.setString(2, trade.symbol)
+                    stmt.setLong(3, trade.timestamp)
+                    stmt.setBigDecimal(4, BigDecimal.valueOf(trade.price))
+                    stmt.setBigDecimal(5, BigDecimal.valueOf(trade.quantity))
+                    stmt.setBoolean(6, trade.isBuy)
+                    stmt.setBigDecimal(7, filteredTrade.volumeUsd)
+                    stmt.setDouble(8, filteredTrade.percentileThreshold)
+                    stmt.setBigDecimal(9, filteredTrade.volumeThreshold)
+                    stmt.setString(10, filteredTrade.tradeCategory?.name)
+                    stmt.setLong(11, filteredTrade.windowStartTime)
+                    stmt.setLong(12, filteredTrade.windowEndTime)
+                    stmt.setInt(13, filteredTrade.windowTotalTrades)
+                    stmt.setObject(14, batchId)
+
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+                conn.commit()
+            }
+        }
+    }
+
+    // ========== AGGREGATES (ARROW FILES) ==========
+
+    fun saveAggregate(aggregate: AggregateCandle, filePath: String) {
+        // Сохраняем Arrow файл на диск
+        Files.write(Paths.get(filePath), aggregate.arrowData.array())
+
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                INSERT INTO aggregates 
+                (exchange, symbol, timeframe, start_time, end_time,
+                 arrow_file_path, arrow_file_size, total_ticks,
+                 min_price, max_price, price_levels)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (exchange, symbol, timeframe, start_time, end_time) 
+                DO UPDATE SET
+                    arrow_file_path = EXCLUDED.arrow_file_path,
+                    arrow_file_size = EXCLUDED.arrow_file_size,
+                    total_ticks = EXCLUDED.total_ticks,
+                    min_price = EXCLUDED.min_price,
+                    max_price = EXCLUDED.max_price,
+                    price_levels = EXCLUDED.price_levels,
+                    updated_at = CURRENT_TIMESTAMP
+            """).use { stmt ->
+                stmt.setString(1, aggregate.exchange)
+                stmt.setString(2, aggregate.symbol)
+                stmt.setString(3, aggregate.timeframe)
+                stmt.setLong(4, aggregate.startTime)
+                stmt.setLong(5, aggregate.endTime)
+                stmt.setString(6, filePath)
+                stmt.setLong(7, aggregate.arrowData.array().size.toLong())
+                stmt.setLong(8, aggregate.totalTicks)
+                stmt.setBigDecimal(9, aggregate.minPrice)
+                stmt.setBigDecimal(10, aggregate.maxPrice)
+                stmt.setInt(11, aggregate.priceLevels)
+
+                stmt.execute()
+            }
+        }
+    }
+
+    fun getAggregate(
+        exchange: String,
+        symbol: String,
+        timeframe: String,
+        startTime: Long,
+        endTime: Long
+    ): AggregateCandle? {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT arrow_file_path, total_ticks, min_price, max_price, price_levels
+                FROM aggregates
+                WHERE exchange = ? AND symbol = ? AND timeframe = ? 
+                  AND start_time = ? AND end_time = ?
+            """).use { stmt ->
+                stmt.setString(1, exchange)
+                stmt.setString(2, symbol)
+                stmt.setString(3, timeframe)
+                stmt.setLong(4, startTime)
+                stmt.setLong(5, endTime)
+
+                val rs = stmt.executeQuery()
+                if (rs.next()) {
+                    val filePath = rs.getString("arrow_file_path")
+                    val fileData = Files.readAllBytes(Paths.get(filePath))
+
+                    AggregateCandle(
+                        exchange = exchange,
+                        symbol = symbol,
+                        timeframe = timeframe,
+                        startTime = startTime,
+                        endTime = endTime,
+                        arrowData = ByteBuffer.wrap(fileData),
+                        totalTicks = rs.getLong("total_ticks"),
+                        minPrice = rs.getBigDecimal("min_price"),
+                        maxPrice = rs.getBigDecimal("max_price"),
+                        priceLevels = rs.getInt("price_levels")
+                    )
+                } else {
+                    null
                 }
             }
         }
     }
-}
 
-### FILE: src/main/kotlin/storage/DatabaseManager.kt
-package com.aandios.storage
+    // ========== VOLUME WINDOWS ==========
 
+    fun saveVolumeWindow(window: VolumeWindow) {
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                INSERT INTO volume_windows
+                (exchange, symbol, start_time, end_time, total_trades,
+                 min_volume, max_volume, avg_volume, median_volume, stddev_volume,
+                 p50_volume, p95_volume, p98_volume, p99_volume,
+                 filter_percentile, filter_threshold)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (exchange, symbol, start_time, end_time) 
+                DO UPDATE SET
+                    total_trades = EXCLUDED.total_trades,
+                    min_volume = EXCLUDED.min_volume,
+                    max_volume = EXCLUDED.max_volume,
+                    avg_volume = EXCLUDED.avg_volume,
+                    median_volume = EXCLUDED.median_volume,
+                    stddev_volume = EXCLUDED.stddev_volume,
+                    p50_volume = EXCLUDED.p50_volume,
+                    p95_volume = EXCLUDED.p95_volume,
+                    p98_volume = EXCLUDED.p98_volume,
+                    p99_volume = EXCLUDED.p99_volume,
+                    filter_percentile = EXCLUDED.filter_percentile,
+                    filter_threshold = EXCLUDED.filter_threshold
+            """).use { stmt ->
+                stmt.setString(1, window.exchange)
+                stmt.setString(2, window.symbol)
+                stmt.setLong(3, window.startTime)
+                stmt.setLong(4, window.endTime)
+                stmt.setInt(5, window.totalTrades)
+                stmt.setBigDecimal(6, window.minVolume)
+                stmt.setBigDecimal(7, window.maxVolume)
+                stmt.setBigDecimal(8, window.avgVolume)
+                stmt.setBigDecimal(9, window.medianVolume)
+                stmt.setBigDecimal(10, window.stddevVolume)
+                stmt.setBigDecimal(11, window.p50Volume)
+                stmt.setBigDecimal(12, window.p95Volume)
+                stmt.setBigDecimal(13, window.p98Volume)
+                stmt.setBigDecimal(14, window.p99Volume)
+                stmt.setDouble(15, window.filterPercentile)
+                stmt.setBigDecimal(16, window.filterThreshold)
 
-
-### FILE: src/main/kotlin/storage/TradeDTO.kt
-package com.aandios.storage
-
-import com.aandios.model.Trade
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.transactions.transaction
-
-class TradeDAO {
-    object Trades : Table() {
-        val ts = long("ts")
-        val price = double("price")
-        val qty = double("qty")
-        val direction = bool("direction") // true = bid, false = ask
-    }
-
-    init {
-        transaction {
-            SchemaUtils.create(Trades)
-        }
-    }
-
-    fun insert(trade: Trade) {
-        transaction {
-            Trades.insert {
-                it[ts] = trade.timestamp
-                it[price] = trade.price
-                it[qty] = trade.quantity
-                it[direction] = trade.direction
+                stmt.execute()
             }
         }
+    }
+
+    fun getLatestVolumeWindow(
+        exchange: String,
+        symbol: String
+    ): VolumeWindow? {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT * FROM volume_windows
+                WHERE exchange = ? AND symbol = ?
+                ORDER BY end_time DESC
+                LIMIT 1
+            """).use { stmt ->
+                stmt.setString(1, exchange)
+                stmt.setString(2, symbol)
+
+                val rs = stmt.executeQuery()
+                if (rs.next()) {
+                    VolumeWindow(
+                        exchange = rs.getString("exchange"),
+                        symbol = rs.getString("symbol"),
+                        startTime = rs.getLong("start_time"),
+                        endTime = rs.getLong("end_time"),
+                        totalTrades = rs.getInt("total_trades"),
+                        minVolume = rs.getBigDecimal("min_volume"),
+                        maxVolume = rs.getBigDecimal("max_volume"),
+                        avgVolume = rs.getBigDecimal("avg_volume"),
+                        medianVolume = rs.getBigDecimal("median_volume"),
+                        stddevVolume = rs.getBigDecimal("stddev_volume"),
+                        p50Volume = rs.getBigDecimal("p50_volume"),
+                        p95Volume = rs.getBigDecimal("p95_volume"),
+                        p98Volume = rs.getBigDecimal("p98_volume"),
+                        p99Volume = rs.getBigDecimal("p99_volume"),
+                        filterPercentile = rs.getDouble("filter_percentile"),
+                        filterThreshold = rs.getBigDecimal("filter_threshold")
+                    )
+                } else {
+                    null
+                }
+            }
+        }
+    }
+
+    // ========== STATISTКА БД ==========
+
+    fun getDatabaseStats(): Map<String, Any> {
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT 
+                    (SELECT COUNT(*) FROM raw_trades) as raw_trades_count,
+                    (SELECT COUNT(*) FROM filtered_trades) as filtered_trades_count,
+                    (SELECT COUNT(*) FROM aggregates) as aggregates_count,
+                    (SELECT COUNT(*) FROM volume_windows) as windows_count,
+                    pg_database_size(current_database()) as db_size_bytes,
+                    (SELECT MAX(timestamp) FROM raw_trades) as latest_raw_trade,
+                    (SELECT MAX(timestamp) FROM filtered_trades) as latest_filtered_trade
+            """).use { stmt ->
+                val rs = stmt.executeQuery()
+                if (rs.next()) {
+                    mapOf(
+                        "rawTrades" to rs.getLong("raw_trades_count"),
+                        "filteredTrades" to rs.getLong("filtered_trades_count"),
+                        "aggregates" to rs.getInt("aggregates_count"),
+                        "windows" to rs.getInt("windows_count"),
+                        "dbSizeMB" to (rs.getLong("db_size_bytes") / 1024 / 1024),
+                        "latestRawTrade" to rs.getLong("latest_raw_trade"),
+                        "latestFilteredTrade" to rs.getLong("latest_filtered_trade")
+                    )
+                } else {
+                    emptyMap()
+                }
+            }
+        }
+    }
+
+    fun shutdown() {
+        dataSource.close()
     }
 }
 
