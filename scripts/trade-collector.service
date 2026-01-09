@@ -1,0 +1,37 @@
+[Unit]
+Description=Trade Collector Service
+After=network.target postgresql.service
+Requires=postgresql.service
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trade-collector
+ExecStart=/opt/trade-collector/trade-collector
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/trade-collector/app.log
+StandardError=append:/var/log/trade-collector/error.log
+EnvironmentFile=/opt/trade-collector/.env
+Environment="JAVA_OPTS=--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+PIDFile=/var/run/trade-collector.pid
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/trade-collector
+ReadOnlyPaths=/
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

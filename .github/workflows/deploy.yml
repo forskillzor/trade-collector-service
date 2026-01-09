@@ -1,0 +1,135 @@
+name: Deploy to VPS
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  APP_NAME: trade-collector
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'graalvm'
+          java-version: '17'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      - name: Run tests
+        run: ./gradlew test
+
+  build-native:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'graalvm'
+          java-version: '17'
+
+      - name: Install native-image
+        run: |
+          gu install native-image
+          gu list
+
+      - name: Build native image
+        run: ./gradlew nativeCompile
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-collector-bin
+          path: build/native/nativeCompile/trade-collector
+
+  deploy:
+    needs: build-native
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native binary
+        uses: actions/download-artifact@v4
+        with:
+          name: trade-collector-bin
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          echo "${{ secrets.VPS_HOST }} $(ssh-keyscan -H ${{ secrets.VPS_HOST }} 2>/dev/null || echo '')" >> ~/.ssh/known_hosts
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy-package
+          cp trade-collector deploy-package/
+          cp config/production.json deploy-package/config.json
+          cp scripts/*.sh deploy-package/
+          cp 001_init_schema.sql deploy-package/
+          
+          # Create .env file from secrets
+          cat > deploy-package/.env << EOF
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          EOF
+
+      - name: Deploy to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          # Copy files to VPS
+          scp -i ~/.ssh/vps_key -r deploy-package/* $VPS_USER@$VPS_HOST:/tmp/deploy/
+          
+          # Execute deployment script on VPS
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST << 'EOF'
+          set -e
+          
+          APP_NAME="trade-collector"
+          APP_DIR="/opt/\$APP_NAME"
+          
+          # Stop if running
+          sudo systemctl stop \$APP_NAME 2>/dev/null || true
+          
+          # Create directories
+          sudo mkdir -p \$APP_DIR /var/log/\$APP_NAME /var/lib/\$APP_NAME/{aggregates,exports}
+          
+          # Copy files
+          sudo cp -r /tmp/deploy/* \$APP_DIR/
+          sudo chmod +x \$APP_DIR/*.sh \$APP_DIR/trade-collector
+          
+          # Setup systemd
+          sudo cp \$APP_DIR/trade-collector.service /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl enable \$APP_NAME
+          
+          # Start service
+          sudo systemctl start \$APP_NAME
+          
+          # Health check
+          sleep 10
+          curl -f http://localhost:8080/health || (echo "Health check failed" && exit 1)
+          EOF
+
+      - name: Verify deployment
+        run: |
+          sleep 30
+          curl -f http://${{ secrets.VPS_HOST }}:8080/health || exit 1
