@@ -20,6 +20,23 @@ application {
     )
 }
 
+graalvmNative {
+    binaries {
+        named("main") {
+            imageName.set("trade-collector")
+            mainClass.set("com.aandios.MainKt")
+            buildArgs.add("--enable-url-protocols=http,https")
+            buildArgs.add("--initialize-at-build-time=io.ktor,kotlinx.coroutines,org.slf4j")
+            buildArgs.add("-H:+ReportExceptionStackTraces")
+            buildArgs.add("--verbose")
+
+            // Добавьте для работы с reflection (если нужно)
+            buildArgs.add("-H:+AllowVMInspection")
+            buildArgs.add("-H:ReflectionConfigurationFiles=reflect-config.json")
+        }
+    }
+}
+
 dependencies {
     val ktor_version = "3.2.0"
     // Ktor Client (WebSocket)
