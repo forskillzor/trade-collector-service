@@ -1,22 +1,26 @@
 package com.aandios.service
 
-import com.aandios.model.*
+import com.aandios.model.AggregateCandle
+import com.aandios.model.PriceLevelData
+import com.aandios.model.Trade
 import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
 import org.apache.arrow.memory.RootAllocator
-import org.apache.arrow.vector.*
+import org.apache.arrow.vector.DecimalVector
+import org.apache.arrow.vector.Float8Vector
+import org.apache.arrow.vector.IntVector
+import org.apache.arrow.vector.VectorSchemaRoot
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
+import org.apache.arrow.vector.types.pojo.ArrowType
+import org.apache.arrow.vector.types.pojo.FieldType
+import java.io.ByteArrayOutputStream
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.Instant
-import java.util.*
-import kotlinx.coroutines.*
-import org.apache.arrow.vector.types.pojo.ArrowType
-import org.apache.arrow.vector.types.pojo.FieldType
-import java.io.ByteArrayOutputStream
 
 private val log = KotlinLogging.logger {}
 
@@ -74,15 +78,13 @@ class AggregateProcessor(
             val childAllocator =
                 this@AggregateProcessor.allocator.newChildAllocator("candle-builder", 0, Long.MAX_VALUE)
 
-            val decimalType = FieldType.nullable(ArrowType.Decimal(38, 8, 128))
-            val intType = FieldType.nullable(ArrowType.Int(32, true))
 
             // Создаем векторы для Arrow
-            val priceVector = DecimalVector("price", decimalType, childAllocator)
-            val bidVolumeVector = DecimalVector("bid_volume", decimalType, childAllocator)
-            val askVolumeVector = DecimalVector("ask_volume", decimalType, childAllocator)
-            val bidCountVector = IntVector("bid_count", allocator)
-            val askCountVector = IntVector("ask_count", allocator)
+            val priceVector = Float8Vector("price", childAllocator)
+            val bidVolumeVector = Float8Vector("bid_volume", childAllocator)
+            val askVolumeVector = Float8Vector("ask_volume", childAllocator)
+            val bidCountVector = IntVector("bid_count", childAllocator)
+            val askCountVector = IntVector("ask_count", childAllocator)
 
             try {
                 // Устанавливаем емкость
@@ -97,9 +99,13 @@ class AggregateProcessor(
                 val sortedLevels = priceLevels.values.sortedBy { it.price }
 
                 sortedLevels.forEachIndexed { index, level ->
-                    priceVector.setSafe(index, level.price)
-                    bidVolumeVector.setSafe(index, level.bidVolume)
-                    askVolumeVector.setSafe(index, level.askVolume)
+                    val priceScaled = level.price.setScale(10, RoundingMode.HALF_UP)
+                    val bidVolumeScaled = level.bidVolume.setScale(10, RoundingMode.HALF_UP)
+                    val askVolumeScaled = level.askVolume.setScale(10, RoundingMode.HALF_UP)
+
+                    priceVector.setSafe(index, level.price.toDouble())
+                    bidVolumeVector.setSafe(index, level.bidVolume.toDouble())
+                    askVolumeVector.setSafe(index, level.askVolume.toDouble())
                     bidCountVector.setSafe(index, level.bidCount)
                     askCountVector.setSafe(index, level.askCount)
                 }
@@ -129,13 +135,21 @@ class AggregateProcessor(
 
             } finally {
                 // Освобождаем ресурсы
-                priceVector.close()
-                bidVolumeVector.close()
-                askVolumeVector.close()
-                bidCountVector.close()
-                askCountVector.close()
-                allocator.close()
-                childAllocator.close()
+                try {
+                    priceVector.close()
+                    bidVolumeVector.close()
+                    askVolumeVector.close()
+                    bidCountVector.close()
+                    askCountVector.close()
+                } catch (e: Exception) {
+                    log.error(e) { "❌ Ошибка закрытия векторов" }
+                }
+
+                try {
+                    childAllocator.close()
+                } catch (e: Exception) {
+                    log.error(e) { "❌ Ошибка закрытия аллокатора" }
+                }
             }
         }
 

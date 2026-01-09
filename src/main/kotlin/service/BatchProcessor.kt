@@ -61,6 +61,7 @@ class BatchProcessor(
         val queue = tradeQueues[key] ?: return
         val batch = mutableListOf<Trade>()
 
+        // Копируем batch из очереди
         while (batch.size < batchSize && queue.isNotEmpty()) {
             val trade = queue.poll()
             if (trade != null) {
@@ -74,12 +75,17 @@ class BatchProcessor(
                 log.debug { "✅ Вставлено ${batch.size} тиков в raw_trades для $key" }
             } catch (e: Exception) {
                 log.error(e) { "❌ Ошибка вставки батча в raw_trades" }
-                // Возвращаем тики обратно в очередь для повторной попытки
-                batch.forEach { trade -> queue.offer(trade) }
+                // Возвращаем обратно в ту же очередь
+                batch.forEach { trade ->
+                    // Проверяем, что очередь ещё существует
+                    val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
+                    currentQueue.offer(trade)
+                }
+                return
             }
         }
 
-        // Удаляем пустую очередь
+        // Удаляем пустую очередь только после успешной вставки
         if (queue.isEmpty()) {
             tradeQueues.remove(key)
         }

@@ -8,6 +8,7 @@ import mu.KotlinLogging
 import java.time.Instant
 import kotlinx.coroutines.*
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
 
 private val log = KotlinLogging.logger {}
 
@@ -28,7 +29,7 @@ class TradeProcessor(
     private var lastCleanupTime = System.currentTimeMillis()
 
     // Статистика по инструментам
-    private val instrumentStats = mutableMapOf<String, InstrumentStats>()
+    private val instrumentStats = ConcurrentHashMap<String, InstrumentStats>()
     private val adapterCache = mutableMapOf<String, ExchangeAdapter>()
 
 //    data class ProcessorConfig(
@@ -100,8 +101,8 @@ class TradeProcessor(
                 // 3. Обрабатываем для агрегации в свечи
                 aggregateProcessor.processTrade(trade)
 
-                // Логируем каждые 100 тиков
-                if (totalTrades % 100 == 0L) {
+                // Логируем каждые 1000 тиков
+                if (totalTrades % 1000 == 0L) {
                     val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
                     log.debug {
                         "📊 Обработано: $totalTrades (${tradesPerSecond}/с) | " +

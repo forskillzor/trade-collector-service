@@ -1,5 +1,7 @@
 plugins {
     kotlin("jvm") version "2.2.20"
+    kotlin("plugin.serialization") version "1.9.0"
+    application
 }
 
 group = "com.aandios"
@@ -8,6 +10,13 @@ version = "1.0-SNAPSHOT"
 repositories {
     mavenCentral()
     google()
+}
+application {
+    mainClass.set("com.aandios.MainKt")
+    applicationDefaultJvmArgs = listOf(
+        "--add-opens=java.base/java.nio=ALL-UNNAMED",
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+    )
 }
 
 dependencies {

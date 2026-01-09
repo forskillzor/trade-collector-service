@@ -1,0 +1,138 @@
+@startuml "TradeCollectorService Architecture - Vertical Layout"
+' Попробуем направление
+top to bottom direction
+
+title TradeCollectorService v0.1.0 - Detailed Architecture (Vertical Layout Attempt)
+
+' --- Packages ---
+package "Main & Config" as MainConfig {
+  [Main.kt] <<EntryPoint>> as Main
+  [BuildConfig] <<Object>> as BuildConfig
+  [AppConfig.kt] <<DataClass>> as AppConfig
+  [ConfigManager.kt] <<Object>> as ConfigManager
+}
+
+package "Exchange Adapters" as Adapters {
+  interface "ExchangeAdapter.kt" as IExchangeAdapter
+  [BaseExchangeAdapter.kt] <<Abstract>> as BaseAdapter
+  [BinanceAdapter.kt] as BinanceAdapter
+  [BybitAdapter.kt] as BybitAdapter
+  [ExchangeAdapterFactory.kt] <<Object>> as AdapterFactory
+}
+
+package "Core Services" as Core {
+  [TradeCollectorService.kt] <<Service>> as CollectorService
+  [ExchangeClient.kt] <<Service>> as ExchangeClient
+  [TradeProcessor.kt] <<Service>> as TradeProcessor
+  [BatchProcessor.kt] <<Service>> as BatchProcessor
+  [VolumeFilterProcessor.kt] <<Service>> as VolumeFilterProcessor
+  [AggregateProcessor.kt] <<Service>> as AggregateProcessor
+  [MonitoringServer.kt] <<Service>> as MonitoringServer
+}
+
+package "Models" as Models {
+  [Trade.kt] <<DataClass>> as Trade
+  [FilteredTrade.kt] <<DataClass>> as FilteredTrade
+  [TradeCategory.kt] <<Enum>> as TradeCategory
+  [VolumeWindow.kt] <<DataClass>> as VolumeWindow
+  [AggregateCandle.kt] <<DataClass>> as AggregateCandle
+  [PriceLevelData.kt] <<DataClass>> as PriceLevelData
+}
+
+package "Storage" as Storage {
+  [TradeDAO.kt] <<DAO>> as TradeDAO
+  [HikariDataSource] <<Library>> as HikariDS
+  database "PostgreSQL" as PostgreSQL {
+    entity "raw_trades" as RawTrades
+    entity "filtered_trades" as FilteredTrades
+    entity "volume_windows" as VolumeWindows
+    entity "aggregates" as Aggregates
+  }
+}
+
+package "External Libraries" as Libs {
+  [Ktor Client] <<WebSocket>> as KtorClient
+  [Ktor Server (Ktor + Jetty)] <<HTTP>> as KtorServer
+  [Apache Arrow] <<Library>> as Arrow
+  [HikariCP] <<Library>> as HikariCP
+  [Jackson] <<JSON>> as Jackson
+  [Kotlinx Coroutines] <<Concurrency>> as Coroutines
+  [Kotlinx Serialization] <<Serialization>> as KxSerialization
+  [mu (Kotlin Logging)] <<Logging>> as MuLogging
+}
+
+' --- Relationships ---
+
+' Config flow
+Main --> AppConfig : loads config from >
+Main --> ConfigManager : loads >
+ConfigManager --> AppConfig : manages >
+
+' Main service initialization
+Main --> CollectorService : creates >
+Main --> TradeDAO : creates >
+
+' Exchange Adapters structure
+IExchangeAdapter <|-- BaseAdapter
+BaseAdapter <|-- BinanceAdapter
+BaseAdapter <|-- BybitAdapter
+AdapterFactory --> IExchangeAdapter : creates >
+TradeProcessor --> AdapterFactory : uses >
+
+' Core Services flow
+CollectorService --> ExchangeClient : manages >
+CollectorService --> TradeProcessor : manages >
+CollectorService --> MonitoringServer : manages >
+
+ExchangeClient --> IExchangeAdapter : uses >
+ExchangeClient --> KtorClient : connects >
+
+TradeProcessor --> Trade : processes >
+TradeProcessor --> FilteredTrade : processes >
+TradeProcessor --> AggregateCandle : creates >
+
+' TradeProcessor internal pipeline
+TradeProcessor --> BatchProcessor : sends to >
+TradeProcessor --> VolumeFilterProcessor : sends to >
+TradeProcessor --> AggregateProcessor : sends to >
+
+BatchProcessor --> TradeDAO : persists raw >
+VolumeFilterProcessor --> TradeDAO : persists filtered/wins >
+AggregateProcessor --> TradeDAO : persists agg >
+AggregateProcessor --> Arrow : serializes to >
+
+MonitoringServer --> TradeProcessor : gets metrics >
+MonitoringServer --> TradeDAO : gets stats >
+MonitoringServer --> KtorServer : runs on >
+
+' Storage connections
+TradeDAO --> HikariDS : uses >
+TradeDAO --> PostgreSQL : persists data >
+HikariDS --> HikariCP : uses >
+
+' Model dependencies
+Trade --> FilteredTrade : is part of >
+FilteredTrade --> TradeCategory : has >
+AggregateCandle --> PriceLevelData : contains >
+VolumeFilterProcessor --> VolumeWindow : creates >
+
+' Library dependencies (supporting services)
+KtorClient -up-|> Coroutines
+KtorServer -up-|> Coroutines
+KtorServer -up-|> KxSerialization
+Jackson -up-|> KxSerialization
+MuLogging -up-|> Coroutines
+
+' Data flow in DB
+RawTrades <--> TradeDAO : CRUD >
+FilteredTrades <--> TradeDAO : CRUD >
+VolumeWindows <--> TradeDAO : CRUD >
+Aggregates <--> TradeDAO : CRUD >
+
+' Notes
+note right of AggregateProcessor : Processes trades into\nprice level candles\nand saves as Arrow files
+note right of VolumeFilterProcessor : Calculates sliding window\npercentiles and filters\n'whale' trades
+note right of BatchProcessor : Batches raw trades\nfor efficient DB insertion
+note bottom of MonitoringServer : Provides HTTP API\nfor health, metrics,\nand status
+
+@enduml

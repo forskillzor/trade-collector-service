@@ -6,6 +6,7 @@ import mu.KotlinLogging
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 
 private val log = KotlinLogging.logger {}
@@ -16,8 +17,8 @@ class VolumeFilterProcessor(
     private val slideStep: Int = 100000,
     private val filterPercentile: Double = 0.98
 ) {
-    private val slidingWindows = mutableMapOf<String, SlidingWindowStats>() // ключ: "exchange_symbol"
-    private val processedTrades = mutableMapOf<String, Long>() // для отслеживания прогресса
+    private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>() // ключ: "exchange_symbol"
+    private val processedTrades = ConcurrentHashMap<String, Long>() // для отслеживания прогресса
 
     data class SlidingWindowStats(
         val exchange: String,
@@ -98,15 +99,21 @@ class VolumeFilterProcessor(
         }
 
         // Стандартное отклонение
-        // Стандартное отклонение
         val variance = window.sortedVolumes
-            .map { it.subtract(avgVolume).pow(2) }
-            .sumOf { it }
+            .map { value ->
+                val diff = value.subtract(avgVolume)
+                diff.multiply(diff)  // diff²
+            }
+            .fold(BigDecimal.ZERO) { acc, value -> acc.add(value) }
             .divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
 
-        val stddevVolume = if (variance >= BigDecimal.ZERO) {
-            BigDecimal.valueOf(kotlin.math.sqrt(variance.toDouble()))
-        } else {
+        val stddevVolume = try {
+            if (variance >= BigDecimal.ZERO) {
+                BigDecimal.valueOf(kotlin.math.sqrt(variance.toDouble()))
+            } else {
+                BigDecimal.ZERO
+            }
+        } catch (e: Exception) {
             BigDecimal.ZERO
         }
 

@@ -8,8 +8,8 @@
   ],
   "database": {
     "type": "postgresql",
-    "host": "localhost",
-    "port": 6432,
+    "host": "95.81.99.28",
+    "port": 5432,
     "database": "trade_collector",
     "username": "trade_user",
     "password": "JXDsdSZzXx1221!!!",

@@ -7,10 +7,25 @@ import mu.KotlinLogging
 import kotlinx.coroutines.*
 import kotlin.system.exitProcess
 import java.nio.file.Paths
+import java.io.File
 
 private val log = KotlinLogging.logger {}
 
 fun main() = runBlocking {
+    log.info { "=== ОТЛАДКА ПУТЕЙ ===" }
+    log.info { "1. System.getProperty(\"user.dir\"): ${System.getProperty("user.dir")}" }
+    log.info { "2. File(\".\").absolutePath: ${File(".").absolutePath}" }
+    log.info { "3. File(\"config.json\").absolutePath: ${File("config.json").absolutePath}" }
+    log.info { "4. File(\"config.json\").exists(): ${File("config.json").exists()}" }
+
+    // Посмотрим, что есть в текущей директории
+    val currentDir = File(".")
+    log.info { "5. Содержимое текущей директории:" }
+    currentDir.listFiles()?.sortedBy { it.name }?.forEach { file ->
+        log.info { "   - ${file.name} (${if (file.isFile) "файл" else "папка"}, ${file.length()} байт)" }
+    }
+    log.info { "=========================" }
+
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         log.error(throwable) { "Необработанное исключение" }
         exitProcess(1)
@@ -19,9 +34,27 @@ fun main() = runBlocking {
     val scope = CoroutineScope(Dispatchers.Default + exceptionHandler)
 
     try {
+
+        log.info { "🔍 Загрузка конфигурации..." }
+        val configLoaded = ConfigManager.loadFromFile()
+
+        val configPath = "config.json"
+
+        if (!configLoaded) {
+            log.error { "❌ Конфигурация не загружена. Создайте файл config.json" }
+            log.error { "📁 Разместите его в: ${File(".").absolutePath}" }
+            exitProcess(1)  // ✅ Завершаем программу
+        }
+
         // Загрузка конфигурации
-        ConfigManager.loadFromFile()
+        ConfigManager.loadFromFile(configPath)
+
         val config = ConfigManager.getConfig()
+
+        log.info { "📊 Загружено бирж: ${config.exchanges.size}" }
+        config.exchanges.forEach {
+            log.info { "   • ${it.name}: ${it.symbols.size} пар, enabled=${it.enabled}" }
+        }
 
         // Проверяем что это PostgreSQL
         if (config.database.type.lowercase() != "postgresql") {

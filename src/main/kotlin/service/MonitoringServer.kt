@@ -125,7 +125,13 @@ class MonitoringServer(
 
     suspend fun stop() {
         serverJob?.cancel()
-        server?.stop(1000, 5000)
+        serverJob = null
+
+        server?.let {srv ->
+            withContext(Dispatchers.IO) {
+                srv.stop(1000, 5000)
+            }
+        }
         server = null
         log.info { "🌐 Сервер мониторинга остановлен" }
     }
