@@ -3,8 +3,6 @@ name: Deploy Collector Service
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 env:
@@ -15,37 +13,14 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      should_deploy: ${{ steps.check-secrets.outputs.should_deploy }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Check for deployment secrets
-        id: check-secrets
-        run: |
-          # Проверяем наличие необходимых секретов
-          if [[ -n "${{ secrets.VPS_HOST }}" && -n "${{ secrets.VPS_USER }}" && -n "${{ secrets.VPS_SSH_KEY }}" ]]; then
-            echo "✅ Все необходимые секреты найдены"
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Не все секреты для деплоя настроены"
-            echo "should_deploy=false" >> $GITHUB_OUTPUT
-            echo "Отсутствуют:"
-            [[ -z "${{ secrets.VPS_HOST }}" ]] && echo "- VPS_HOST"
-            [[ -z "${{ secrets.VPS_USER }}" ]] && echo "- VPS_USER"
-            [[ -z "${{ secrets.VPS_SSH_KEY }}" ]] && echo "- VPS_SSH_KEY"
-          fi
 
       - name: 🔧 Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
-
-      - name: Verify Java installation
-        run: |
-          java --version
-          javac --version
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -80,23 +55,10 @@ jobs:
           mkdir -p deploy-package
           
           # Копируем shadowJar с фиксированным именем
-          JAR_SOURCE="build/libs/${JAR_NAME}"
-          if [ -f "$JAR_SOURCE" ]; then
-            cp "$JAR_SOURCE" deploy-package/
-            echo "✅ Shadow JAR скопирован: ${JAR_NAME}"
-          else
-            echo "❌ Shadow JAR не найден: $JAR_SOURCE"
-            ls -la build/libs/
-            exit 1
-          fi
+          cp "build/libs/${JAR_NAME}" deploy-package/
           
-          # Копируем конфиг
-          if [ -f "config/production.json" ]; then
-            cp config/production.json deploy-package/config.json
-            echo "✅ Конфиг скопирован"
-          else
-            echo "⚠️ Конфиг не найден, создаем базовый..."
-            cat > deploy-package/config.json << 'EOF'
+          # Создаем базовый конфиг
+          cat > deploy-package/config.json << 'EOF'
           {
             "server": {
               "port": 8080,
@@ -112,13 +74,12 @@ jobs:
             }
           }
           EOF
-          fi
-  
+          
           # Создаем скрипт запуска для JVM
           cat > deploy-package/run.sh << 'EOF'
           #!/bin/bash
           cd /opt/trade-collector
-  
+          
           # JVM параметры из build.gradle.kts
           JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
           
@@ -132,13 +93,13 @@ jobs:
           java $JVM_OPTS -jar trade-collector.jar --config config.json
           EOF
           chmod +x deploy-package/run.sh
-  
+          
           # Создаем systemd service файл для JVM
           cat > deploy-package/trade-collector.service << 'EOF'
           [Unit]
           Description=Trade Collector Service (JVM)
-          After=network.target postgresql.service
-          Requires=postgresql.service
+          After=network.target
+          Wants=postgresql.service
           
           [Service]
           Type=simple
@@ -150,23 +111,10 @@ jobs:
           RestartSec=10
           StandardOutput=append:/var/log/trade-collector/app.log
           StandardError=append:/var/log/trade-collector/error.log
-          Environment="JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64"
-          
-          # Ограничения для безопасности
-          NoNewPrivileges=true
-          PrivateTmp=true
-          ProtectSystem=strict
-          ReadWritePaths=/opt/trade-collector /var/log/trade-collector
           
           [Install]
           WantedBy=multi-user.target
           EOF
-  
-          # Копируем SQL схему если есть
-          if [ -f "001_init_schema.sql" ]; then
-          cp 001_init_schema.sql deploy-package/
-          echo "✅ SQL схема скопирована"
-          fi
           
           echo "📁 Содержимое пакета деплоя:"
           ls -la deploy-package/
@@ -181,7 +129,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: needs.build.outputs.should_deploy == 'true' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -189,63 +137,12 @@ jobs:
           name: ${{ env.APP_NAME }}-jvm-package
           path: ./deploy-package
 
-      - name: Validate deployment secrets
-        run: |
-          echo "🔐 Проверка секретов для деплоя..."
-          
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            echo "❌ VPS_HOST не настроен"
-            echo "Добавьте секрет VPS_HOST в Settings -> Secrets and variables -> Actions"
-            exit 1
-          fi
-          
-          if [ -z "${{ secrets.VPS_USER }}" ]; then
-            echo "❌ VPS_USER не настроен"
-            echo "Добавьте секрет VPS_USER в Settings -> Secrets and variables -> Actions"
-            exit 1
-          fi
-          
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "❌ VPS_SSH_KEY не настроен"
-            echo "Добавьте приватный SSH ключ как секрет VPS_SSH_KEY"
-            exit 1
-          fi
-          
-          echo "✅ Все необходимые секреты настроены"
-
       - name: Set up SSH
         run: |
-          echo "🔧 Настройка SSH подключения..."
           mkdir -p ~/.ssh
-          
-          # Проверяем что SSH ключ не пустой
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "❌ SSH ключ пустой"
-            exit 1
-          fi
-          
-          # Сохраняем SSH ключ
           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
-          
-          # Проверяем что файл создан
-          if [ ! -s ~/.ssh/vps_key ]; then
-            echo "❌ Не удалось сохранить SSH ключ"
-            exit 1
-          fi
-          
           chmod 600 ~/.ssh/vps_key
-          
-          # Добавляем хост в known_hosts
-          echo "🌐 Добавляем ${{ secrets.VPS_HOST }} в known_hosts..."
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || echo "⚠️ Не удалось добавить хост в known_hosts"
-          
-          # Проверяем доступность сервера
-          echo "🔍 Проверяем доступность сервера..."
-          if timeout 10 bash -c "echo > /dev/tcp/$(echo ${{ secrets.VPS_HOST }} | cut -d: -f1)/${PORT:-22}" 2>/dev/null; then
-            echo "✅ Сервер доступен"
-          else
-            echo "⚠️ Не удается проверить доступность сервера"
-          fi
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy to VPS
         env:
@@ -253,217 +150,61 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          echo "🚀 Начинаем деплой на $VPS_HOST..."
-          
-          # Создаем временную директорию
-          mkdir -p /tmp/deploy-files
-          
-          # Копируем все файлы из артефакта
-          cp -r deploy-package/* /tmp/deploy-files/
-          
-          echo "📤 Копируем файлы на сервер..."
-          
-          # Пробуем установить SSH соединение
-          if ! ssh -i ~/.ssh/vps_key -o ConnectTimeout=10 -o BatchMode=yes "$VPS_USER@$VPS_HOST" "echo 'SSH connection successful'"; then
-            echo "❌ Не удалось установить SSH соединение"
-            echo "Проверьте:"
-            echo "1. Правильность SSH ключа"
-            echo "2. Доступность сервера"
-            echo "3. Наличие пользователя $VPS_USER на сервере"
-            exit 1
-          fi
+          echo "🚀 Deploying to $VPS_HOST..."
           
           # Копируем файлы на сервер
-          scp -i ~/.ssh/vps_key -o ConnectTimeout=30 -r /tmp/deploy-files/* "$VPS_USER@$VPS_HOST:/tmp/deploy/" || {
-            echo "⚠️ Не все файлы удалось скопировать"
-          }
+          scp -i ~/.ssh/vps_key -r deploy-package/* $VPS_USER@$VPS_HOST:/tmp/deploy/
           
-          echo "🔄 Выполняем деплой на сервере..."
-          
-          # Подготавливаем скрипт деплоя
-          DEPLOY_SCRIPT=$(cat << 'SCRIPT_EOF'
-          #!/bin/bash
+          # Выполняем установку
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST << 'EOF'
           set -e
           
           APP_NAME="trade-collector"
           APP_USER="trader"
-          APP_DIR="/opt/$APP_NAME"
+          APP_DIR="/opt/\$APP_NAME"
           
-          echo "=== НАЧАЛО ДЕПЛОЯ JVM ВЕРСИИ ==="
+          echo "=== Начало деплоя ==="
           
-          echo "👤 1. Проверка пользователя..."
-          if ! id "$APP_USER" &>/dev/null; then
-          echo "   📝 Создаем пользователя $APP_USER..."
-          sudo useradd -r -s /bin/false "$APP_USER" || {
-          echo "❌ Не удалось создать пользователя"
-          exit 1
-          }
-          echo "   ✅ Пользователь создан"
-          else
-          echo "   ✅ Пользователь уже существует"
+          # 1. Создаем пользователя
+          if ! id "\$APP_USER" &>/dev/null; then
+            sudo useradd -r -s /bin/false \$APP_USER
+            echo "✅ Пользователь создан"
           fi
           
-          echo "📁 2. Создание директорий..."
-          sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
+          # 2. Создаем директории
+          sudo mkdir -p \$APP_DIR /var/log/\$APP_NAME
           
-          echo "📄 3. Копирование файлов..."
-          if [ -f "/tmp/deploy/trade-collector.jar" ]; then
-          sudo cp "/tmp/deploy/trade-collector.jar" "$APP_DIR/"
-          echo "   ✅ JAR файл скопирован"
-          else
-          echo "❌ JAR файл не найден в /tmp/deploy/"
-          ls -la /tmp/deploy/ 2>/dev/null || true
-          exit 1
-          fi
-
-        # Копируем остальные файлы
-          [ -f "/tmp/deploy/run.sh" ] && sudo cp "/tmp/deploy/run.sh" "$APP_DIR/"
-          [ -f "/tmp/deploy/config.json" ] && sudo cp "/tmp/deploy/config.json" "$APP_DIR/"
-          [ -f "/tmp/deploy/001_init_schema.sql" ] && sudo cp "/tmp/deploy/001_init_schema.sql" "$APP_DIR/"
-
-        # Даем права на выполнение
-          [ -f "$APP_DIR/run.sh" ] && sudo chmod +x "$APP_DIR/run.sh"
+          # 3. Копируем файлы
+          sudo cp /tmp/deploy/* \$APP_DIR/
+          sudo chmod +x \$APP_DIR/run.sh
           
-          echo "⚙️ 4. Настройка systemd..."
-          if [ -f "/tmp/deploy/trade-collector.service" ]; then
-          sudo cp "/tmp/deploy/trade-collector.service" "/etc/systemd/system/$APP_NAME.service"
-          else
-          echo "   ⚠️ Service файл не найден, создаем новый..."
-          sudo tee "/etc/systemd/system/$APP_NAME.service" > /dev/null << SERVICE_EOF
-          [Unit]
-          Description=Trade Collector Service (JVM)
-          After=network.target postgresql.service
-          Requires=postgresql.service
-          
-          [Service]
-          Type=simple
-          User=$APP_USER
-          Group=$APP_USER
-          WorkingDirectory=$APP_DIR
-          ExecStart=$APP_DIR/run.sh
-          Restart=always
-          RestartSec=10
-          StandardOutput=append:/var/log/$APP_NAME/app.log
-          StandardError=append:/var/log/$APP_NAME/error.log
-          
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE_EOF
-          fi
-          
-          echo "🗄️ 5. Настройка базы данных..."
-          if systemctl is-active --quiet postgresql; then
-          echo "   📊 Настраиваем PostgreSQL..."
-          # Создаем пользователя БД если не существует
-          sudo -u postgres psql -c "DO \$\$ BEGIN CREATE USER trade_user WITH PASSWORD '$DB_PASSWORD'; EXCEPTION WHEN duplicate_object THEN RAISE NOTICE 'Пользователь уже существует'; END \$\$;" 2>/dev/null || true
-          
-          # Создаем базу данных если не существует
-          sudo -u postgres psql -c "CREATE DATABASE trade_collector OWNER trade_user;" 2>/dev/null || echo "   ℹ️ База данных уже существует"
-          
-          # Применяем схему если есть
-          if [ -f "$APP_DIR/001_init_schema.sql" ]; then
-          echo "   📋 Применяем схему БД..."
-          sudo -u postgres psql -d trade_collector -f "$APP_DIR/001_init_schema.sql" 2>&1 | grep -E "(ERROR|уже существует)" || true
-          fi
-          else
-          echo "   ⚠️ PostgreSQL не запущен, пропускаем настройку БД"
-          fi
-          
-          echo "🔧 6. Настройка прав..."
-          sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
-          
-          echo "🔄 7. Запуск сервиса..."
+          # 4. Настраиваем systemd
+          sudo cp \$APP_DIR/trade-collector.service /etc/systemd/system/
           sudo systemctl daemon-reload
-          sudo systemctl enable "$APP_NAME" || echo "⚠️ Не удалось включить автозапуск"
-          sudo systemctl restart "$APP_NAME" || {
-          echo "❌ Не удалось перезапустить сервис"
-          sudo journalctl -u "$APP_NAME" -n 30 --no-pager
-          exit 1
-          }
-
-          echo "⏳ 8. Ожидание запуска..."
-          for i in {1..10}; do
-          if sudo systemctl is-active --quiet "$APP_NAME"; then
-          echo "   ✅ Сервис запущен"
-          break
-          fi
-          echo "   ⌛ Ожидание... ($i/10)"
-          sleep 3
-          done
+          sudo systemctl enable \$APP_NAME
           
-          if ! sudo systemctl is-active --quiet "$APP_NAME"; then
-          echo "❌ Сервис не запустился"
-          sudo journalctl -u "$APP_NAME" -n 30 --no-pager
-          exit 1
-          fi
+          # 5. Настраиваем права
+          sudo chown -R \$APP_USER:\$APP_USER \$APP_DIR /var/log/\$APP_NAME
           
-          echo "📊 9. Проверка статуса..."
-          sudo systemctl status "$APP_NAME" --no-pager | head -20
+          # 6. Перезапускаем сервис
+          sudo systemctl restart \$APP_NAME
           
-          echo "🌐 10. Проверка health check..."
-          for i in {1..5}; do
-          if curl -f -s --max-time 5 http://localhost:8080/health > /dev/null; then
-          echo "   ✅ Health check пройден!"
-          exit 0
-          fi
-          echo "   ⌛ Ожидание ответа... ($i/5)"
+          echo "✅ Деплой завершен"
+          echo ""
+          echo "📊 Проверяем статус..."
           sleep 5
-          done
-          
-          echo "⚠️ Health check не пройден, проверка логов..."
-          sudo journalctl -u "$APP_NAME" -n 20 --no-pager
-          echo "🔍 Проверяем что слушает порт 8080..."
-          sudo netstat -tlnp | grep :8080 || true
-          
-          echo "🎉 === ДЕПЛОЙ ЗАВЕРШЕН ==="
-          SCRIPT_EOF
-          )
-          
-          # Выполняем скрипт на сервере
-          ssh -i ~/.ssh/vps_key -o ConnectTimeout=30 "$VPS_USER@$VPS_HOST" "bash -s" << EOF
-          $DEPLOY_SCRIPT
+          sudo systemctl status \$APP_NAME --no-pager | head -20
           EOF
 
       - name: Verify deployment
         run: |
-          echo "🔍 Финальная проверка деплоя..."
-          sleep 20
-          
-          # Проверяем health endpoint
-          MAX_RETRIES=5
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "Попытка $i/$MAX_RETRIES..."
-            if curl -f -s --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health"; then
-              echo "✅ Сервис успешно работает на ${{ secrets.VPS_HOST }}:8080"
-              exit 0
-            fi
-            sleep 10
-          done
-          
-          echo "❌ Сервис не отвечает после всех попыток"
-          echo "Для диагностики выполните команды:"
-          echo "1. Проверка логов: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo journalctl -u trade-collector -n 50 --no-pager'"
-          echo "2. Проверка статуса: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo systemctl status trade-collector'"
-          echo "3. Проверка портов: ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo netstat -tlnp'"
-          exit 1
-
-  notify:
-    needs: [build, deploy]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Notify build status
-        run: |
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "✅ Сборка завершена успешно"
+          echo "🔍 Проверяем сервис..."
+          sleep 30
+          if curl -f -s --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health"; then
+            echo "✅ Сервис работает!"
           else
-            echo "❌ Сборка завершена с ошибкой"
-          fi
-          
-          if [[ "${{ needs.deploy.result }}" == "success" ]]; then
-            echo "✅ Деплой завершен успешно"
-          elif [[ "${{ needs.deploy.result }}" == "skipped" ]]; then
-            echo "⚠️ Деплой пропущен (нет секретов или не сработал триггер)"
-          elif [[ "${{ needs.deploy.result }}" == "failure" ]]; then
-            echo "❌ Деплой завершен с ошибкой"
+            echo "❌ Сервис не отвечает"
+            echo "Для диагностики выполните:"
+            echo "ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo journalctl -u trade-collector -n 50'"
+            exit 1
           fi
