@@ -19,6 +19,11 @@ application {
         "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
     )
 }
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
 
 graalvmNative {
     binaries {
