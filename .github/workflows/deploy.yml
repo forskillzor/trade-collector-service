@@ -7,10 +7,6 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  deployments: write
-
 env:
   APP_NAME: trade-collector
   APP_USER: trader
