@@ -1,170 +1,202 @@
-name: Deploy from main branch
+name: Deploy Trade Collector
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch:  # Позволяет запускать вручную
 
 env:
   APP_NAME: trade-collector
-  APP_USER: trader
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: ☕ Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: 🏗️ Build with Gradle
+        run: |
+          chmod +x gradlew
+          ./gradlew build
 
-      - name: Build with Gradle
-        run: ./gradlew build
-
-      - name: Build native image
+      - name: 📦 Build native image
         run: ./gradlew nativeCompile
 
-      - name: Prepare deployment package
+      - name: 📁 Prepare deployment files
         run: |
           mkdir -p deploy-package
           cp build/native/nativeCompile/trade-collector deploy-package/
           cp config/production.json deploy-package/config.json
-          cp scripts/* deploy-package/ 2>/dev/null || true
-          cp trade-collector.service deploy-package/
-          cp 001_init_schema.sql deploy-package/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-package
-          path: deploy-package/
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-package
-
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
-          chmod 600 ~/.ssh/vps_key
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Deploy to VPS
-        env:
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: |
-          echo "🚀 Deploying to $VPS_HOST..."
           
-          # Сначала копируем файлы во временную директорию
-          scp -i ~/.ssh/vps_key -r * $VPS_USER@$VPS_HOST:/tmp/deploy/
-          
-          # Выполняем деплой
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST << 'EOF'
-          set -e
-          
-          APP_NAME="trade-collector"
-          APP_USER="trader"
-          APP_DIR="/opt/\$APP_NAME"
-          
-          echo "👤 Проверка пользователя \$APP_USER..."
-          if ! id "\$APP_USER" &>/dev/null; then
-            echo "📝 Создание пользователя \$APP_USER..."
-            sudo useradd -r -s /bin/false \$APP_USER
+          # Копируем все скрипты если они есть
+          if [ -d "scripts" ]; then
+            cp -r scripts/* deploy-package/ 2>/dev/null || true
           fi
           
-          echo "📁 Создание директорий..."
-          sudo mkdir -p \$APP_DIR \
-            /var/log/\$APP_NAME \
-            /var/lib/\$APP_NAME/{aggregates,exports} \
-            /var/backups/\$APP_NAME
-          
-          echo "📄 Копирование файлов..."
-          sudo cp /tmp/deploy/trade-collector \$APP_DIR/
-          sudo cp /tmp/deploy/config.json \$APP_DIR/
-          
-          if [ -f "/tmp/deploy/001_init_schema.sql" ]; then
-            sudo cp /tmp/deploy/001_init_schema.sql \$APP_DIR/
+          # Копируем SQL схему
+          if [ -f "001_init_schema.sql" ]; then
+            cp 001_init_schema.sql deploy-package/
           fi
           
-          if [ -f "/tmp/deploy/trade-collector.service" ]; then
-            sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/
-          else
-            # Создаем service файл если его нет
-            sudo tee /etc/systemd/system/\$APP_NAME.service << 'SERVICE'
-          [Unit]
-          Description=Trade Collector Service
-          After=network.target postgresql.service
-          Requires=postgresql.service
-          
-          [Service]
-          Type=simple
-          User=\$APP_USER
-          Group=\$APP_USER
-          WorkingDirectory=\$APP_DIR
-          ExecStart=\$APP_DIR/trade-collector
-          Restart=always
-          RestartSec=10
-          StandardOutput=append:/var/log/\$APP_NAME/app.log
-          StandardError=append:/var/log/\$APP_NAME/error.log
-          
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE
-          fi
-          
-          echo "🔧 Настройка прав..."
-          sudo chown -R \$APP_USER:\$APP_USER \$APP_DIR /var/lib/\$APP_NAME /var/log/\$APP_NAME
-          sudo chmod 755 \$APP_DIR/trade-collector
-          
-          echo "🗄️  Проверка базы данных..."
-          # Создаем пользователя БД если не существует
-          sudo -u postgres psql -c "CREATE USER trade_user WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
-          sudo -u postgres psql -c "CREATE DATABASE trade_collector OWNER trade_user;" 2>/dev/null || true
-          
-          # Применяем схему
-          if [ -f "\$APP_DIR/001_init_schema.sql" ]; then
-            echo "📊 Применение схемы БД..."
-            sudo -u postgres psql -d trade_collector -f \$APP_DIR/001_init_schema.sql
-          fi
-          
-          echo "🔄 Настройка systemd..."
-          sudo systemctl daemon-reload
-          sudo systemctl enable \$APP_NAME
-          
-          echo "🚀 Запуск сервиса..."
-          sudo systemctl restart \$APP_NAME
-          
-          echo "⏳ Ожидание запуска..."
-          sleep 15
-          
-          echo "📊 Проверка статуса..."
-          sudo systemctl status \$APP_NAME --no-pager || true
-          
-          echo "🌐 Проверка health check..."
-          if curl -f -s http://localhost:8080/health > /dev/null; then
-            echo "✅ Health check passed!"
-          else
-            echo "⚠️ Health check failed, checking logs..."
-            sudo journalctl -u \$APP_NAME -n 20 --no-pager || true
-            exit 1
-          fi
-          
-          echo "🎉 Деплой успешно завершен!"
-          EOF
+          # Создаем service файл если нет
+          if [ ! -f "trade-collector.service" ]; then
+            cat > deploy-package/trade-collector.service << EOF
+  [Unit]
+  Description=Trade Collector Service
+  After=network.target postgresql.service
+  
+  [Service]
+  Type=simple
+  User=trader
+  Group=trader
+  WorkingDirectory=/opt/trade-collector
+  ExecStart=/opt/trade-collector/trade-collector
+  Restart=always
+  RestartSec=10
+  
+  [Install]
+  WantedBy=multi-user.target
+  EOF
+  else
+  cp trade-collector.service deploy-package/
+  fi
+  
+  - name: 📤 Upload deployment package
+uses: actions/upload-artifact@v4
+with:
+  name: deployment-package
+  path: deploy-package/
+  retention-days: 1
+
+deploy:
+  needs: build
+  runs-on: ubuntu-latest
+  if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
+  steps:
+    - name: 📥 Download deployment package
+      uses: actions/download-artifact@v4
+      with:
+        name: deployment-package
+
+    - name: 🔑 Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
+        chmod 600 ~/.ssh/vps_key
+        
+        # Trust the host
+        ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+    - name: 🚀 Deploy to VPS
+      env:
+        VPS_USER: ${{ secrets.VPS_USER }}
+        VPS_HOST: ${{ secrets.VPS_HOST }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      run: |
+        echo "Deploying to $VPS_HOST as $VPS_USER..."
+        
+        # Копируем файлы на сервер
+        scp -i ~/.ssh/vps_key -r * $VPS_USER@$VPS_HOST:/tmp/deploy-trade-collector/
+        
+        # Выполняем скрипт деплоя
+        ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST << 'EOF'
+        set -e
+        
+        APP_NAME="trade-collector"
+        APP_USER="trader"
+        APP_DIR="/opt/\$APP_NAME"
+        
+        echo "=== Начало деплоя ==="
+        
+        # 1. Проверяем/создаем пользователя
+        if ! id "\$APP_USER" &>/dev/null; then
+          echo "Создаем пользователя \$APP_USER..."
+          sudo useradd -r -s /bin/false \$APP_USER
+        fi
+        
+        # 2. Создаем директории
+        echo "Создаем директории..."
+        sudo mkdir -p "\$APP_DIR" \
+          "/var/log/\$APP_NAME" \
+          "/var/lib/\$APP_NAME/aggregates" \
+          "/var/lib/\$APP_NAME/exports"
+        
+        # 3. Копируем файлы
+        echo "Копируем файлы..."
+        sudo cp /tmp/deploy-trade-collector/trade-collector "\$APP_DIR/"
+        sudo cp /tmp/deploy-trade-collector/config.json "\$APP_DIR/"
+        
+        # 4. Настраиваем systemd
+        echo "Настраиваем systemd..."
+        if [ -f "/tmp/deploy-trade-collector/trade-collector.service" ]; then
+          sudo cp /tmp/deploy-trade-collector/trade-collector.service /etc/systemd/system/\$APP_NAME.service
+        else
+          echo "Создаем service файл..."
+          sudo tee /etc/systemd/system/\$APP_NAME.service << SERVICE
+  [Unit]
+  Description=Trade Collector Service
+  After=network.target postgresql.service
+  
+  [Service]
+  Type=simple
+  User=\$APP_USER
+  Group=\$APP_USER
+  WorkingDirectory=\$APP_DIR
+  ExecStart=\$APP_DIR/trade-collector
+  Restart=always
+  RestartSec=10
+  StandardOutput=append:/var/log/\$APP_NAME/app.log
+  StandardError=append:/var/log/\$APP_NAME/error.log
+  
+  [Install]
+  WantedBy=multi-user.target
+  SERVICE
+  fi
+  
+  # 5. Настраиваем права
+  echo "Настраиваем права..."
+  sudo chown -R "\$APP_USER:\$APP_USER" "\$APP_DIR" "/var/log/\$APP_NAME" "/var/lib/\$APP_NAME"
+  sudo chmod 755 "\$APP_DIR/trade-collector"
+  
+  # 6. Обновляем systemd
+  echo "Обновляем systemd..."
+  sudo systemctl daemon-reload
+  sudo systemctl enable \$APP_NAME
+  
+  # 7. Запускаем сервис
+  echo "Запускаем сервис..."
+  sudo systemctl restart \$APP_NAME
+  
+  # 8. Проверяем
+  echo "Проверяем статус..."
+  sleep 5
+  sudo systemctl status \$APP_NAME --no-pager
+  
+  echo "✅ Деплой завершен!"
+  EOF
+
+- name: 🌐 Verify deployment
+  run: |
+    echo "Проверяем health check..."
+    sleep 30
+    
+    if curl -f -s --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health" > /dev/null; then
+      echo "✅ Сервис работает!"
+    else
+      echo "❌ Сервис не отвечает"
+    
+      # Пытаемся получить логи
+      ssh -i ~/.ssh/vps_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+        "sudo journalctl -u trade-collector -n 30 --no-pager" || true
+    
+      exit 1
+    fi
