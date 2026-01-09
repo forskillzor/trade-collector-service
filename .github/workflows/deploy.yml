@@ -1,4 +1,4 @@
-name: Deploy Collector Service
+name: Deploy Trade Collector (JVM)
 
 on:
   push:
@@ -24,279 +24,140 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Verify Java installation
-        run: |
-          java --version
-          javac --version
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build shadowJar with Gradle
+      - name: Build shadowJar
         run: ./gradlew shadowJar
 
-      - name: Verify JAR file
+      - name: Verify JAR exists
         run: |
-          echo "📦 Проверяем созданные JAR файлы:"
-          find build/libs -name "*.jar" -type f
-          
-          # Проверяем что shadowJar создан
-          SHADOW_JAR_PATH="build/libs/${JAR_NAME}"
-          if [ -f "$SHADOW_JAR_PATH" ]; then
-            echo "✅ Shadow JAR найден: $SHADOW_JAR_PATH"
-            ls -lh "$SHADOW_JAR_PATH"
-          else
-            # Ищем любой jar с именем trade-collector
-            JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
-            if [ -n "$JAR_FILE" ]; then
-              echo "📦 Используем JAR: $JAR_FILE"
-              cp "$JAR_FILE" "build/libs/${JAR_NAME}"
+          JAR_PATH="build/libs/${JAR_NAME}"
+          if [ ! -f "$JAR_PATH" ]; then
+            # Find any fat jar
+            JAR_PATH=$(find build/libs -name "*-all.jar" -o -name "*-fat.jar" -o -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+            if [ -n "$JAR_PATH" ]; then
+              cp "$JAR_PATH" "build/libs/${JAR_NAME}"
             else
-              echo "❌ JAR файл не найден"
+              echo "❌ No JAR found"
+              ls -la build/libs/
               exit 1
             fi
           fi
+          echo "✅ JAR ready: $(ls -lh build/libs/${JAR_NAME})"
 
       - name: Prepare deployment package
         run: |
           mkdir -p deploy-package
           
-          # Копируем shadowJar с фиксированным именем
-          JAR_SOURCE="build/libs/${JAR_NAME}"
-          if [ -f "$JAR_SOURCE" ]; then
-            cp "$JAR_SOURCE" deploy-package/
-            echo "✅ Shadow JAR скопирован: ${JAR_NAME}"
-          else
-            echo "❌ Shadow JAR не найден: $JAR_SOURCE"
-            ls -la build/libs/
-            exit 1
-          fi
+          cp "build/libs/${JAR_NAME}" deploy-package/
           
-          # Копируем конфиг
+          # Config
           if [ -f "config/production.json" ]; then
             cp config/production.json deploy-package/config.json
-            echo "✅ Конфиг скопирован"
           else
-            echo "⚠️ Конфиг не найден, создаем базовый..."
-            cat > deploy-package/config.json << 'EOF'
-{
-  "server": {
-    "port": 8080,
-    "host": "0.0.0.0"
-  },
-  "database": {
-    "url": "jdbc:postgresql://localhost:5432/trade_collector",
-    "user": "trade_user",
-    "driver": "org.postgresql.Driver"
-  },
-  "logging": {
-    "level": "INFO"
-  }
-}
-EOF
+            echo '{"server":{"port":8080,"host":"0.0.0.0"},"database":{"url":"jdbc:postgresql://localhost:5432/trade_collector","user":"trade_user","driver":"org.postgresql.Driver"},"logging":{"level":"INFO"}}' > deploy-package/config.json
           fi
           
-          # Создаем скрипт запуска для JVM
-          cat > deploy-package/run.sh << 'EOF'
-#!/bin/bash
-cd /opt/trade-collector
+          # systemd service
+          cat > deploy-package/${{ env.APP_NAME }}.service <<EOF
+          [Unit]
+          Description=Trade Collector Service (JVM)
+          After=network.target postgresql.service
+          Requires=postgresql.service
 
-# JVM параметры из build.gradle.kts
-JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+          [Service]
+          Type=simple
+          User=${{ env.APP_USER }}
+          Group=${{ env.APP_USER }}
+          WorkingDirectory=/opt/${{ env.APP_NAME }}
+          ExecStart=/usr/bin/java -Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxRAMPercentage=75.0 --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED -jar ${{ env.JAR_NAME }} --config config.json
+          Restart=always
+          RestartSec=10
+          StandardOutput=append:/var/log/${{ env.APP_NAME }}/app.log
+          StandardError=append:/var/log/${{ env.APP_NAME }}/error.log
 
-# Дополнительные параметры для мониторинга
-JVM_OPTS="$JVM_OPTS -XX:+UseG1GC"
-JVM_OPTS="$JVM_OPTS -Xmx512m"
-JVM_OPTS="$JVM_OPTS -Xms256m"
-JVM_OPTS="$JVM_OPTS -XX:MaxRAMPercentage=75.0"
-
-# Запуск JAR
-java $JVM_OPTS -jar trade-collector.jar --config config.json
-EOF
-chmod +x deploy-package/run.sh
-
-# Создаем systemd service файл для JVM
-cat > deploy-package/trade-collector.service << 'EOF'
-[Unit]
-Description=Trade Collector Service (JVM)
-After=network.target postgresql.service
-Requires=postgresql.service
-
-[Service]
-Type=simple
-User=trader
-Group=trader
-WorkingDirectory=/opt/trade-collector
-ExecStart=/opt/trade-collector/run.sh
-Restart=always
-RestartSec=10
-StandardOutput=append:/var/log/trade-collector/app.log
-StandardError=append:/var/log/trade-collector/error.log
-Environment="JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64"
-
-# Ограничения для безопасности
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/opt/trade-collector /var/log/trade-collector
-
-[Install]
-WantedBy=multi-user.target
-EOF
+          [Install]
+          WantedBy=multi-user.target
+          EOF
   
-  # Копируем SQL схему если есть
-  if [ -f "001_init_schema.sql" ]; then
-  cp 001_init_schema.sql deploy-package/
-  echo "✅ SQL схема скопирована"
-  fi
-  
-  echo "📁 Содержимое пакета деплоя:"
-  ls -la deploy-package/
-
-- name: Upload artifact
-  uses: actions/upload-artifact@v4
-  with:
-    name: ${{ env.APP_NAME }}-jvm-package
-    path: deploy-package/
-    retention-days: 1
-
-deploy:
-  needs: build
-  runs-on: ubuntu-latest
-  if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-  steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: ${{ env.APP_NAME }}-jvm-package
-        path: ./deploy-package
-
-    - name: Set up SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
-        chmod 600 ~/.ssh/vps_key
-        ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
-        chmod 644 ~/.ssh/known_hosts
-
-    - name: Deploy to VPS
-      env:
-        VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_HOST: ${{ secrets.VPS_HOST }}
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      run: |
-        echo "🚀 Deploying JVM version to $VPS_HOST..."
-        
-        # Создаем временную директорию
-        rm -rf /tmp/deploy-files
-        mkdir -p /tmp/deploy-files
-        
-        # Копируем все файлы из артефакта
-        cp -r deploy-package/* /tmp/deploy-files/
-        
-        # Копируем файлы на сервер
-        scp -i ~/.ssh/vps_key -r /tmp/deploy-files/* $VPS_USER@$VPS_HOST:/tmp/deploy/
-        
-        # Выполняем деплой скрипт на сервере
-        ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST 'bash -s' << 'EOF'
-        set -e
-        
-        APP_NAME="trade-collector"
-        APP_USER="trader"
-        APP_DIR="/opt/\$APP_NAME"
-        
-        echo "=== НАЧАЛО ДЕПЛОЯ JVM ВЕРСИИ ==="
-        
-        echo "👤 1. Проверка пользователя..."
-        if ! id "\$APP_USER" &>/dev/null; then
-          sudo useradd -r -s /bin/false \$APP_USER
-          echo "   ✅ Пользователь создан"
-        fi
-        
-        echo "📁 2. Создание директорий..."
-        sudo mkdir -p \$APP_DIR /var/log/\$APP_NAME
-        
-        echo "📄 3. Копирование файлов..."
-        # Проверяем наличие JAR файла
-        if [ -f "/tmp/deploy/trade-collector.jar" ]; then
-          sudo cp /tmp/deploy/trade-collector.jar \$APP_DIR/
-          echo "   ✅ JAR файл скопирован"
-        else
-          echo "   ❌ JAR файл не найден!"
-          ls -la /tmp/deploy/
-          exit 1
-        fi
-        
-        # Копируем остальные файлы
-        sudo cp /tmp/deploy/run.sh \$APP_DIR/ 2>/dev/null || true
-        sudo cp /tmp/deploy/config.json \$APP_DIR/ 2>/dev/null || true
-        
-        # Даем права на выполнение
-        sudo chmod +x \$APP_DIR/run.sh 2>/dev/null || true
-        
-        echo "⚙️ 4. Настройка systemd..."
-        if [ -f "/tmp/deploy/trade-collector.service" ]; then
-          sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/\$APP_NAME.service
-        else
-          echo "   ⚠️ Service файл не найден, используем базовый"
-        fi
-        
-        echo "🗄️ 5. Настройка базы данных..."
-        if systemctl is-active --quiet postgresql; then
-          sudo -u postgres psql -c "CREATE USER trade_user WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || echo "   ℹ️ Пользователь БД уже существует"
-          sudo -u postgres psql -c "CREATE DATABASE trade_collector OWNER trade_user;" 2>/dev/null || echo "   ℹ️ База данных уже существует"
-        
-          if [ -f "/tmp/deploy/001_init_schema.sql" ]; then
-            echo "   📊 Применение схемы БД..."
-            sudo -u postgres psql -d trade_collector -f /tmp/deploy/001_init_schema.sql 2>&1 | grep -v "уже существует" || true
+          # SQL init
+          if [ -f "001_init_schema.sql" ]; then
+          cp 001_init_schema.sql deploy-package/
           fi
-        else
-          echo "   ⚠️ PostgreSQL не запущен, пропускаем настройку БД"
-        fi
-        
-        echo "🔧 6. Настройка прав..."
-        sudo chown -R \$APP_USER:\$APP_USER \$APP_DIR /var/log/\$APP_NAME
-        
-        echo "🔄 7. Запуск сервиса..."
-        sudo systemctl daemon-reload
-        sudo systemctl enable \$APP_NAME
-        sudo systemctl restart \$APP_NAME
-        
-        echo "⏳ 8. Ожидание запуска..."
-        sleep 15
-        
-        echo "📊 9. Проверка статуса..."
-        if sudo systemctl is-active --quiet \$APP_NAME; then
-          echo "   ✅ Сервис запущен"
-          sudo systemctl status \$APP_NAME --no-pager | head -20
-        else
-          echo "   ❌ Сервис не запущен"
-          sudo journalctl -u \$APP_NAME -n 30 --no-pager
-          exit 1
-        fi
-        
-        echo "🌐 10. Проверка health check..."
-        sleep 5
-        if curl -f -s --max-time 5 http://localhost:8080/health > /dev/null; then
-          echo "   ✅ Health check пройден!"
-        else
-          echo "   ⚠️ Health check не пройден, проверка логов..."
-          sudo journalctl -u \$APP_NAME -n 20 --no-pager
-          exit 1
-        fi
-        
-        echo "🎉 === JVM ДЕПЛОЙ УСПЕШНО ЗАВЕРШЕН ==="
-EOF
 
-- name: Verify deployment
-  run: |
-    echo "🔍 Проверка удаленного сервиса..."
-    sleep 30
-    if curl -f -s --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health"; then
-      echo "✅ Сервис работает на ${{ secrets.VPS_HOST }}:8080"
-    else
-      echo "❌ Сервис не отвечает на ${{ secrets.VPS_HOST }}:8080"
-      echo "Для диагностики выполните:"
-      echo "ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo journalctl -u trade-collector -n 50 --no-pager'"
-      exit 1
-    fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-jvm-package
+          path: deploy-package/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-jvm-package
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to VPS
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          scp -i ~/.ssh/vps_key -r ./* $VPS_USER@$VPS_HOST:/tmp/deploy/
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST <<'EOF'
+          set -e
+          APP_NAME="trade-collector"
+          APP_USER="trader"
+          APP_DIR="/opt/$APP_NAME"
+          
+          sudo mkdir -p $APP_DIR /var/log/$APP_NAME
+          sudo cp /tmp/deploy/trade-collector.jar $APP_DIR/
+          sudo cp /tmp/deploy/config.json $APP_DIR/ 2>/dev/null || true
+          sudo cp /tmp/deploy/001_init_schema.sql /tmp/ 2>/dev/null || true
+          sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/$APP_NAME.service
+          
+          sudo chown -R $APP_USER:$APP_USER $APP_DIR /var/log/$APP_NAME
+          
+          # DB setup
+          if systemctl is-active --quiet postgresql; then
+            sudo -u postgres psql -c "CREATE USER trade_user WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
+            sudo -u postgres psql -c "CREATE DATABASE trade_collector OWNER trade_user;" 2>/dev/null || true
+            if [ -f /tmp/001_init_schema.sql ]; then
+              sudo -u postgres psql -d trade_collector -f /tmp/001_init_schema.sql 2>/dev/null || true
+            fi
+          fi
+          
+          sudo systemctl daemon-reload
+          sudo systemctl enable $APP_NAME
+          sudo systemctl restart $APP_NAME
+          
+          sleep 10
+          if sudo systemctl is-active --quiet $APP_NAME; then
+            echo "✅ Deploy successful"
+          else
+            sudo journalctl -u $APP_NAME -n 20 --no-pager
+            exit 1
+          fi
+          EOF
+
+      - name: Verify service
+        run: |
+          sleep 15
+          if curl -f --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health"; then
+            echo "✅ Service is up"
+          else
+            echo "❌ Service down"
+            exit 1
+          fi
