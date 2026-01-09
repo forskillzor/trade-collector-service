@@ -20,9 +20,8 @@ jobs:
       - name: 🔧 Install GraalVM with native-image
         uses: graalvm/setup-graalvm@v1
         with:
-          version: '17.0.12'
-          java-version: '17'
-          components: 'native-image'
+          distribution: 'graalvm-community'  # ✅ Стабильно работает
+          java-version: '21'                # ✅ LTS, свежая          components: 'native-image'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify GraalVM installation
