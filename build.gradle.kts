@@ -2,8 +2,8 @@ plugins {
     kotlin("jvm") version "2.2.20"  // ✅ Исправить на 1.9.0
     kotlin("plugin.serialization") version "2.2.20"  // ✅ Та же версия
     application
-    // Добавьте для native сборки:
-    id("org.graalvm.buildtools.native") version "0.9.28"}
+    id("com.github.johnrengelman.shadow") version "8.1.1"
+}
 
 group = "com.aandios"
 version = "1.0-SNAPSHOT"
@@ -25,20 +25,18 @@ java {
     }
 }
 
-graalvmNative {
-    binaries {
-        named("main") {
-            imageName.set("trade-collector")
-            mainClass.set("com.aandios.MainKt")
-            buildArgs.add("--enable-url-protocols=http,https")
-            buildArgs.add("--initialize-at-build-time=io.ktor,kotlinx.coroutines,org.slf4j")
-            buildArgs.add("-H:+ReportExceptionStackTraces")
-            buildArgs.add("--verbose")
-
-            // Добавьте для работы с reflection (если нужно)
-            buildArgs.add("-H:+AllowVMInspection")
-            buildArgs.add("-H:ReflectionConfigurationFiles=reflect-config.json")
+tasks {
+    named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+        archiveBaseName.set("trade-collector")
+        archiveClassifier.set("")
+        archiveVersion.set("")
+        manifest {
+            attributes("Main-Class" to "com.aandios.MainKt")
         }
+    }
+
+    build {
+        dependsOn("shadowJar")
     }
 }
 
@@ -90,7 +88,4 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
-}
-kotlin {
-    jvmToolchain(24)
 }
