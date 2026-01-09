@@ -133,6 +133,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
+    environment:
+      name: deploy to vps
+      url: https://${{ secrets.VPS_HOST }}:8080
+
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     steps:
       - name: Download artifact
