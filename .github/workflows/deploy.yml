@@ -133,12 +133,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-
     environment:
       name: deploy to vps
       url: https://${{ secrets.VPS_HOST }}:8080
-
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -146,33 +145,54 @@ jobs:
           name: ${{ env.APP_NAME }}-jvm-package
           path: ./deploy-package
 
+      - name: Debug Environment Secrets
+        run: |
+          echo "🔍 Проверяем Environment 'deploy to vps':"
+          echo "VPS_HOST установлен: ${{ secrets.VPS_HOST != '' && 'ДА' || 'НЕТ' }}"
+          echo "VPS_USER установлен: ${{ secrets.VPS_USER != '' && 'ДА' || 'НЕТ' }}"
+          echo "VPS_SSH_KEY установлен: ${{ secrets.VPS_SSH_KEY != '' && 'ДА' || 'НЕТ' }}"
+          echo "DB_PASSWORD установлен: ${{ secrets.DB_PASSWORD != '' && 'ДА' || 'НЕТ' }}"
+
       - name: Set up SSH
         run: |
+          echo "🔧 Настраиваем SSH подключение..."
+          
+          # Проверяем что секреты не пустые
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "❌ ОШИБКА: VPS_SSH_KEY пустой!"
+            echo "Проверьте Environment 'deploy to vps':"
+            echo "1. VPS_SSH_KEY должен содержать приватный SSH ключ"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            echo "❌ ОШИБКА: VPS_HOST пустой!"
+            exit 1
+          fi
+          
           mkdir -p ~/.ssh
           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          
+          echo "✅ SSH настроен для ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
 
       - name: Deploy to VPS
-        env:
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          echo "🚀 Deploying to $VPS_HOST..."
+          echo "🚀 Начинаем деплой на ${{ secrets.VPS_HOST }}..."
           
           # Копируем файлы на сервер
-          scp -i ~/.ssh/vps_key -r deploy-package/* $VPS_USER@$VPS_HOST:/tmp/deploy/
+          scp -i ~/.ssh/vps_key -r deploy-package/* "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/deploy/"
           
           # Выполняем установку
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST << 'EOF'
+          ssh -i ~/.ssh/vps_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
           set -e
           
           APP_NAME="trade-collector"
           APP_USER="trader"
           APP_DIR="/opt/\$APP_NAME"
           
-          echo "=== Начало деплоя ==="
+          echo "=== НАЧАЛО ДЕПЛОЯ ==="
           
           # 1. Создаем пользователя
           if ! id "\$APP_USER" &>/dev/null; then
