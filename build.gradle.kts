@@ -1,8 +1,9 @@
 plugins {
-    kotlin("jvm") version "2.2.20"
-    kotlin("plugin.serialization") version "1.9.0"
+    kotlin("jvm") version "2.2.20"  // ✅ Исправить на 1.9.0
+    kotlin("plugin.serialization") version "2.2.20"  // ✅ Та же версия
     application
-}
+    // Добавьте для native сборки:
+    id("org.graalvm.buildtools.native") version "0.9.28"}
 
 group = "com.aandios"
 version = "1.0-SNAPSHOT"
