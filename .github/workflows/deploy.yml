@@ -180,14 +180,18 @@ jobs:
           echo "✅ SSH настроен для ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}"
 
       - name: Deploy to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          echo "🚀 Начинаем деплой на ${{ secrets.VPS_HOST }}..."
+          echo "🚀 Начинаем деплой на $VPS_HOST..."
           
           # Копируем файлы на сервер
-          scp -i ~/.ssh/vps_key -r deploy-package/* "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/deploy/"
+          scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
           
           # Выполняем установку
-          ssh -i ~/.ssh/vps_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" << 'EOF'
+          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" << 'EOF'
           set -e
           
           APP_NAME="trade-collector"
@@ -228,14 +232,17 @@ jobs:
           EOF
 
       - name: Verify deployment
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           echo "🔍 Проверяем сервис..."
           sleep 30
-          if curl -f -s --max-time 10 "http://${{ secrets.VPS_HOST }}:8080/health"; then
+          if curl -f -s --max-time 10 "http://$VPS_HOST:8080/health"; then
             echo "✅ Сервис работает!"
           else
             echo "❌ Сервис не отвечает"
             echo "Для диагностики выполните:"
-            echo "ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'sudo journalctl -u trade-collector -n 50'"
+            echo "ssh $VPS_USER@$VPS_HOST 'sudo journalctl -u trade-collector -n 50'"
             exit 1
           fi
