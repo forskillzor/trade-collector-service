@@ -133,6 +133,19 @@ jobs:
             echo "❌ ERROR: VPS_USER is empty!"
             exit 1
           fi
+      - name: Debug All Variables
+        run: |
+          echo "=== DEBUG ALL VARIABLES ==="
+          echo "Environment variables:"
+          env | grep -E "(VPS|SSH|DB)" || true
+          echo ""
+          echo "Testing variable substitution:"
+          echo "VPS_HOST = '$VPS_HOST'"
+          echo "VPS_USER = '$VPS_USER'"
+          echo "VPS_SSH_KEY exists = $([ -n "$VPS_SSH_KEY" ] && echo "YES (${#VPS_SSH_KEY} chars)" || echo "NO")"
+          echo "VPS_SSH_KEY first 100 chars = '${VPS_SSH_KEY:0:100}'"
+          echo "DB_PASSWORD exists = $([ -n "$DB_PASSWORD" ] && echo "YES (${#DB_PASSWORD} chars)" || echo "NO")"
+          echo "=== END DEBUG ==="
 
       - name: Setup SSH
         run: |
@@ -140,46 +153,58 @@ jobs:
           
           mkdir -p ~/.ssh
           
-          # Записываем ключ с правильным форматированием
-          cat > ~/.ssh/vps_key << 'EOF'
-          $VPS_SSH_KEY
-          EOF
+          # Способ 1: Просто echo (самый простой)
+          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           
-          # Проверяем содержимое (первые 2 строки)
-          echo "First 2 lines of key:"
-          head -2 ~/.ssh/vps_key
-          
-          # Проверяем что файл не пустой
-          if [ ! -s ~/.ssh/vps_key ]; then
-            echo "❌ SSH key file is empty!"
+          # Способ 2: Если есть проблемы с переносами строк
+          echo "Writing SSH key..."
+          # Убедимся что ключ записан
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "❌ VPS_SSH_KEY is empty!"
             exit 1
           fi
           
+          # Записываем ключ
+          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
+          
+          # Проверяем что файл создан
+          if [ ! -f ~/.ssh/vps_key ]; then
+            echo "❌ Failed to create SSH key file!"
+            exit 1
+          fi
+          
+          echo "First 3 lines of key file:"
+          head -3 ~/.ssh/vps_key
+          
           # Проверяем формат
-          if ! head -1 ~/.ssh/vps_key | grep -q "BEGIN"; then
-            echo "❌ Wrong SSH key format!"
-            echo "Key should start with: -----BEGIN OPENSSH PRIVATE KEY-----"
-            echo "or: -----BEGIN RSA PRIVATE KEY-----"
-            echo "Actual first line: $(head -1 ~/.ssh/vps_key)"
+          FIRST_LINE=$(head -1 ~/.ssh/vps_key)
+          echo "First line: '$FIRST_LINE'"
+          
+          if [[ "$FIRST_LINE" == *"BEGIN OPENSSH PRIVATE KEY"* ]]; then
+            echo "✅ SSH key format: OpenSSH private key"
+          elif [[ "$FIRST_LINE" == *"BEGIN RSA PRIVATE KEY"* ]]; then
+            echo "✅ SSH key format: RSA private key"
+          elif [[ "$FIRST_LINE" == *"ssh-"* ]]; then
+            echo "❌ Это публичный ключ, а нужен приватный!"
+            echo "В секрете VPS_SSH_KEY должен быть приватный ключ, который начинается с:"
+            echo "-----BEGIN OPENSSH PRIVATE KEY-----"
+            echo "или"
+            echo "-----BEGIN RSA PRIVATE KEY-----"
+            exit 1
+          else
+            echo "❌ Неизвестный формат ключа"
+            echo "Полное содержимое ключа:"
+            cat ~/.ssh/vps_key
             exit 1
           fi
           
           chmod 600 ~/.ssh/vps_key
+          
+          # Добавляем хост в known_hosts
+          echo "Adding $VPS_HOST to known_hosts..."
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           
-          # Тестируем подключение
-          echo "Testing SSH connection..."
-          ssh -i ~/.ssh/vps_key -o ConnectTimeout=5 -o BatchMode=yes "$VPS_USER@$VPS_HOST" "echo 'SSH test successful'" || {
-            echo "❌ SSH connection failed"
-            echo "Check:"
-            echo "1. SSH key format"
-            echo "2. Public key added to server (~/.ssh/authorized_keys)"
-            echo "3. Server allows SSH key authentication"
-            exit 1
-          }
-          
-          echo "✅ SSH configured for $VPS_USER@$VPS_HOST"
-
+          echo "✅ SSH setup complete"
       - name: Deploy to server
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
