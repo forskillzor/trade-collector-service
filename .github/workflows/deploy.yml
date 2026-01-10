@@ -205,15 +205,16 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           
           echo "✅ SSH setup complete"
+
       - name: Deploy to server
+        env:
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}  # Добавь этот секрет в GitHub!
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
           
-          # Copy files to server
           scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
           
-          # Execute deployment script
-          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" << 'EOF'
+          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" << EOF
           set -e
           
           APP_NAME="trade-collector"
@@ -222,39 +223,28 @@ jobs:
           
           echo "=== STARTING DEPLOYMENT ==="
           
-          # 1. Create user if not exists
-          if ! id "\$APP_USER" &>/dev/null; then
-            sudo useradd -r -s /bin/false "\$APP_USER"
-            echo "✅ User created"
-          fi
+          # Используем sudo -S для чтения пароля из stdin
+          echo "$SUDO_PASSWORD" | sudo -S useradd -r -s /bin/false "\$APP_USER" 2>/dev/null || echo "User may already exist"
           
-          # 2. Create directories
-          sudo mkdir -p "\$APP_DIR" "/var/log/\$APP_NAME"
+          echo "$SUDO_PASSWORD" | sudo -S mkdir -p "\$APP_DIR" "/var/log/\$APP_NAME"
+          echo "$SUDO_PASSWORD" | sudo -S cp /tmp/deploy/trade-collector.jar "\$APP_DIR/"
+          [ -f "/tmp/deploy/run.sh" ] && echo "$SUDO_PASSWORD" | sudo -S cp /tmp/deploy/run.sh "\$APP_DIR/"
+          [ -f "/tmp/deploy/config.json" ] && echo "$SUDO_PASSWORD" | sudo -S cp /tmp/deploy/config.json "\$APP_DIR/"
+          [ -f "\$APP_DIR/run.sh" ] && echo "$SUDO_PASSWORD" | sudo -S chmod +x "\$APP_DIR/run.sh"
           
-          # 3. Copy files
-          sudo cp /tmp/deploy/trade-collector.jar "\$APP_DIR/"
-          sudo cp /tmp/deploy/run.sh "\$APP_DIR/" 2>/dev/null || true
-          sudo cp /tmp/deploy/config.json "\$APP_DIR/" 2>/dev/null || true
-          sudo chmod +x "\$APP_DIR/run.sh" 2>/dev/null || true
+          echo "$SUDO_PASSWORD" | sudo -S cp "\$APP_DIR/trade-collector.service" /etc/systemd/system/
+          echo "$SUDO_PASSWORD" | sudo -S chown -R "\$APP_USER:\$APP_USER" "\$APP_DIR" "/var/log/\$APP_NAME"
           
-          # 4. Setup systemd
-          sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/
-          sudo systemctl daemon-reload
-          sudo systemctl enable "\$APP_NAME"
-          
-          # 5. Set permissions
-          sudo chown -R "\$APP_USER:\$APP_USER" "\$APP_DIR" "/var/log/\$APP_NAME"
-          
-          # 6. Restart service
-          sudo systemctl restart "\$APP_NAME"
+          echo "$SUDO_PASSWORD" | sudo -S systemctl daemon-reload
+          echo "$SUDO_PASSWORD" | sudo -S systemctl enable "\$APP_NAME"
+          echo "$SUDO_PASSWORD" | sudo -S systemctl restart "\$APP_NAME"
           
           echo "✅ Deployment completed"
-          echo ""
+          
           echo "📊 Checking status..."
           sleep 3
-          sudo systemctl status "\$APP_NAME" --no-pager | head -20
+          echo "$SUDO_PASSWORD" | sudo -S systemctl status "\$APP_NAME" --no-pager | head -20
           EOF
-
       - name: Verify deployment
         run: |
           echo "🔍 Verifying service..."
