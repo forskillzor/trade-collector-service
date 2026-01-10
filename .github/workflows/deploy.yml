@@ -139,15 +139,44 @@ jobs:
           echo "🔧 Setting up SSH connection..."
           
           mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           
+          # Записываем ключ с правильным форматированием
+          cat > ~/.ssh/vps_key << 'EOF'
+          $VPS_SSH_KEY
+          EOF
+          
+          # Проверяем содержимое (первые 2 строки)
+          echo "First 2 lines of key:"
+          head -2 ~/.ssh/vps_key
+          
+          # Проверяем что файл не пустой
           if [ ! -s ~/.ssh/vps_key ]; then
             echo "❌ SSH key file is empty!"
             exit 1
           fi
           
+          # Проверяем формат
+          if ! head -1 ~/.ssh/vps_key | grep -q "BEGIN"; then
+            echo "❌ Wrong SSH key format!"
+            echo "Key should start with: -----BEGIN OPENSSH PRIVATE KEY-----"
+            echo "or: -----BEGIN RSA PRIVATE KEY-----"
+            echo "Actual first line: $(head -1 ~/.ssh/vps_key)"
+            exit 1
+          fi
+          
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # Тестируем подключение
+          echo "Testing SSH connection..."
+          ssh -i ~/.ssh/vps_key -o ConnectTimeout=5 -o BatchMode=yes "$VPS_USER@$VPS_HOST" "echo 'SSH test successful'" || {
+            echo "❌ SSH connection failed"
+            echo "Check:"
+            echo "1. SSH key format"
+            echo "2. Public key added to server (~/.ssh/authorized_keys)"
+            echo "3. Server allows SSH key authentication"
+            exit 1
+          }
           
           echo "✅ SSH configured for $VPS_USER@$VPS_HOST"
 
