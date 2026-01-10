@@ -7,7 +7,7 @@ on:
 
 env:
   APP_NAME: trade-collector
-  APP_USER: trader
+  APP_USER: deploy
   JAR_NAME: trade-collector.jar
 
 jobs:
