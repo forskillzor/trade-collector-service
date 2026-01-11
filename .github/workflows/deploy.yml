@@ -8,7 +8,6 @@ on:
 env:
   APP_NAME: trade-collector
   APP_USER: deploy
-  JAR_NAME: trade-collector.jar
 
 jobs:
   build:
@@ -29,64 +28,25 @@ jobs:
 
       - name: Prepare package
         run: |
-          mkdir -p deploy-package
-          JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
-          cp "$JAR_FILE" deploy-package/trade-collector.jar
-          
-          # Копируем service файл из scripts/
-          cp scripts/trade-collector.service deploy-package/
-          
-          # config.json и run.sh остаются как были
-          cat > deploy-package/config.json << 'EOF'
-          {
-            "server": {
-              "port": 8080,
-              "host": "0.0.0.0"
-            },
-            "database": {
-              "url": "jdbc:postgresql://localhost:5432/trade_collector",
-              "user": "trade_user",
-              "driver": "org.postgresql.Driver"
-            },
-            "logging": {
-              "level": "INFO"
-            }
-          }
-          EOF
-          
-          cat > deploy-package/run.sh << 'EOF'
-          #!/bin/bash
-          cd /opt/trade-collector
-          
-          JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-          JVM_OPTS="$JVM_OPTS -XX:+UseG1GC"
-          JVM_OPTS="$JVM_OPTS -Xmx512m"
-          JVM_OPTS="$JVM_OPTS -Xms256m"
-          JVM_OPTS="$JVM_OPTS -XX:MaxRAMPercentage=75.0"
-          
-          java $JVM_OPTS -jar trade-collector.jar --config config.json
-          EOF
-          chmod +x deploy-package/run.sh
-          
-          echo "📦 Package contents:"
-          ls -la deploy-package/
-          - name: Upload artifact
-            uses: actions/upload-artifact@v4
-            with:
-              name: trade-collector-package
-              path: deploy-package/
-              retention-days: 1
+          # Даем права на выполнение и запускаем скрипт
+          chmod +x scripts/prepare-package.sh
+          ./scripts/prepare-package.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-collector-package
+          path: deploy-package/
+          retention-days: 1
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # Передаем все секреты через env на уровне job
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
 
     steps:
       - name: Download artifact
@@ -95,253 +55,28 @@ jobs:
           name: trade-collector-package
           path: ./deploy-package
 
-      - name: Debug Secrets
+      - name: Setup SSH environment
         run: |
-          echo "🔍 Проверяем секреты:"
-          echo "VPS_HOST: [${VPS_HOST:0:10}...] (length: ${#VPS_HOST})"
-          echo "VPS_USER: [$VPS_USER] (length: ${#VPS_USER})"
-          echo "VPS_SSH_KEY: [${VPS_SSH_KEY:0:50}...] (length: ${#VPS_SSH_KEY})"
-          echo "DB_PASSWORD: [${DB_PASSWORD:0:5}...] (length: ${#DB_PASSWORD})"
-          
-          if [ -z "$VPS_SSH_KEY" ]; then
-            echo "❌ ERROR: VPS_SSH_KEY is empty!"
-            exit 1
-          fi
-          if [ -z "$VPS_HOST" ]; then
-            echo "❌ ERROR: VPS_HOST is empty!"
-            exit 1
-          fi
-          if [ -z "$VPS_USER" ]; then
-            echo "❌ ERROR: VPS_USER is empty!"
-            exit 1
-          fi
-      - name: Debug All Variables
-        run: |
-          echo "=== DEBUG ALL VARIABLES ==="
-          echo "Environment variables:"
-          env | grep -E "(VPS|SSH|DB)" || true
-          echo ""
-          echo "Testing variable substitution:"
-          echo "VPS_HOST = '$VPS_HOST'"
-          echo "VPS_USER = '$VPS_USER'"
-          echo "VPS_SSH_KEY exists = $([ -n "$VPS_SSH_KEY" ] && echo "YES (${#VPS_SSH_KEY} chars)" || echo "NO")"
-          echo "VPS_SSH_KEY first 100 chars = '${VPS_SSH_KEY:0:100}'"
-          echo "DB_PASSWORD exists = $([ -n "$DB_PASSWORD" ] && echo "YES (${#DB_PASSWORD} chars)" || echo "NO")"
-          echo "=== END DEBUG ==="
-
-      - name: Setup SSH
-        run: |
-          echo "🔧 Setting up SSH connection..."
-          
+          # Подготавливаем SSH ключ (просто сохраняем в файл)
           mkdir -p ~/.ssh
-          
-          # Способ 1: Просто echo (самый простой)
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
-          
-          # Способ 2: Если есть проблемы с переносами строк
-          echo "Writing SSH key..."
-          # Убедимся что ключ записан
-          if [ -z "$VPS_SSH_KEY" ]; then
-            echo "❌ VPS_SSH_KEY is empty!"
-            exit 1
-          fi
-          
-          # Записываем ключ
-          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
-          
-          # Проверяем что файл создан
-          if [ ! -f ~/.ssh/vps_key ]; then
-            echo "❌ Failed to create SSH key file!"
-            exit 1
-          fi
-          
-          echo "First 3 lines of key file:"
-          head -3 ~/.ssh/vps_key
-          
-          # Проверяем формат
-          FIRST_LINE=$(head -1 ~/.ssh/vps_key)
-          echo "First line: '$FIRST_LINE'"
-          
-          if [[ "$FIRST_LINE" == *"BEGIN OPENSSH PRIVATE KEY"* ]]; then
-            echo "✅ SSH key format: OpenSSH private key"
-          elif [[ "$FIRST_LINE" == *"BEGIN RSA PRIVATE KEY"* ]]; then
-            echo "✅ SSH key format: RSA private key"
-          elif [[ "$FIRST_LINE" == *"ssh-"* ]]; then
-            echo "❌ Это публичный ключ, а нужен приватный!"
-            echo "В секрете VPS_SSH_KEY должен быть приватный ключ, который начинается с:"
-            echo "-----BEGIN OPENSSH PRIVATE KEY-----"
-            echo "или"
-            echo "-----BEGIN RSA PRIVATE KEY-----"
-            exit 1
-          else
-            echo "❌ Неизвестный формат ключа"
-            echo "Полное содержимое ключа:"
-            cat ~/.ssh/vps_key
-            exit 1
-          fi
-          
           chmod 600 ~/.ssh/vps_key
-          
-          # Добавляем хост в known_hosts
-          echo "Adding $VPS_HOST to known_hosts..."
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          
-          echo "✅ SSH setup complete"
-          
+
+      - name: Check server (optional)
+        run: |
+          # Даем права и запускаем
+          chmod +x scripts/check-server.sh
+          ./scripts/check-server.sh
+
       - name: Deploy to server
         run: |
-          echo "🚀 Deploying to $VPS_HOST..."
+          # Даем права и запускаем
+          chmod +x scripts/deploy.sh
+          ./scripts/deploy.sh
 
-          # 1. Копируем все файлы
-          scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
-
-          # 2. Деплой с подробной отладкой
-          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" "
-            set -e
-
-            APP_NAME='trade-collector'
-            APP_USER='deploy'
-            APP_DIR='/opt/\$APP_NAME'
-
-            echo '=== 0. УСТАНАВЛИВАЕМ JAVA 21 ==='
-            # Проверяем текущую Java
-            echo 'Текущая Java:'
-            java -version 2>&1
-            echo ''
-
-            # Устанавливаем Java 21 если нужно
-            if ! java -version 2>&1 | grep -q '\"21\.'; then
-              echo 'Устанавливаем Java 21...'
-              sudo apt-get update
-              sudo apt-get install -y openjdk-21-jre-headless
-
-              # Устанавливаем альтернативы
-              sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java || true
-
-              echo 'Проверяем Java 21:'
-              java -version 2>&1
-            else
-              echo '✅ Java 21 уже установлена'
-            fi
-            echo ''
-
-            echo '=== 1. DEBUG /tmp/deploy ==='
-            ls -la /tmp/deploy/
-            echo ''
-
-            echo '=== 2. Создаем структуру ==='
-            sudo mkdir -p \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
-
-            echo '=== 3. Копируем ВСЕ файлы ==='
-            sudo cp -v /tmp/deploy/* \"\$APP_DIR/\" 2>&1
-
-            echo '=== 4. Исправляем права ==='
-            sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
-            sudo chmod 755 \"\$APP_DIR/run.sh\"
-            sudo chmod 644 \"\$APP_DIR\"/*.jar \"\$APP_DIR\"/*.json
-
-            echo '=== 5. Проверяем файлы ==='
-            ls -la \"\$APP_DIR/\"
-            echo ''
-
-            echo '=== 5a. Проверяем JAR файл ==='
-            # Проверяем манифест JAR файла
-            echo 'Версия Java в манифесте JAR:'
-            unzip -p \"\$APP_DIR/trade-collector.jar\" META-INF/MANIFEST.MF | grep -i 'build-jdk' || true
-            echo ''
-
-            echo '=== 5b. Тестируем запуск JAR напрямую ==='
-            cd \"\$APP_DIR\"
-            echo 'Проверяем Java 21:'
-            /usr/bin/java -version 2>&1
-            echo ''
-            echo 'Пробуем запустить JAR с минимальными параметрами:'
-            sudo -u \$APP_USER sh -c \"cd \$APP_DIR && /usr/bin/java -jar trade-collector.jar --version 2>&1 || /usr/bin/java -jar trade-collector.jar --help 2>&1 || echo '❌ Не удалось запустить JAR'\"
-            echo ''
-
-            echo '=== 6. Обновляем service файл ==='
-            sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/\$APP_NAME.service
-            sudo sed -i 's/User=trader/User=deploy/' /etc/systemd/system/\$APP_NAME.service
-            sudo sed -i 's/Group=trader/Group=deploy/' /etc/systemd/system/\$APP_NAME.service
-
-            # Создаем новый service файл с правильными параметрами
-            cat << 'EOF' | sudo tee /etc/systemd/system/\$APP_NAME.service
-          
-            [Unit]
-            Description=Trade Collector Service
-            After=network.target
-            Wants=postgresql.service
-
-            [Service]
-            Type=simple
-            User=deploy
-            Group=deploy
-            WorkingDirectory=/opt/trade-collector
-
-            # Запуск с отладкой
-            Environment=JAVA_OPTS=\"-Xmx512m -Xms256m -XX:+UseG1GC -Dlogging.level.root=DEBUG\"
-            Environment=SPRING_PROFILES_ACTIVE=production
-            ExecStart=/usr/bin/java \
-              --add-opens=java.base/java.nio=ALL-UNNAMED \
-              --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
-              -XX:MaxRAMPercentage=75.0 \
-              -jar /opt/trade-collector/trade-collector.jar \
-              --config /opt/trade-collector/config.json
-            SuccessExitStatus=143
-            Restart=always
-            RestartSec=10
-            StandardOutput=append:/var/log/trade-collector/app.log
-            StandardError=append:/var/log/trade-collector/error.log
-
-            # Важно: задаем окружение для systemd
-            Environment=\"JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64\"
-            Environment=\"PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin:/usr/bin:/bin\"
-
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-
-            echo '=== 7. Перезагружаем и запускаем ==='
-            sudo systemctl daemon-reload
-            sudo systemctl enable \$APP_NAME.service
-
-            echo '=== 8. Сначала проверяем конфигурацию ==='
-            sudo systemctl show \$APP_NAME.service -p Environment,ExecStart --no-pager
-            echo ''
-
-            echo '=== 9. Запускаем сервис ==='
-            sudo systemctl restart \$APP_NAME.service
-
-            echo '=== 10. Проверяем статус ==='
-            sleep 5
-            sudo systemctl status \$APP_NAME.service --no-pager -l
-
-            echo '=== 11. Смотрим логи (первые 50 строк) ==='
-            sudo journalctl -u \$APP_NAME.service -n 50 --no-pager
-
-            echo '=== 12. Проверяем процессы ==='
-            ps aux | grep -E '(java|trade)' | grep -v grep || echo 'Процесс не найден'
-
-            echo '=== 13. Проверяем логи приложения ==='
-            sudo tail -n 20 /var/log/trade-collector/error.log 2>/dev/null || echo 'Файл логов еще не создан'
-            sudo tail -n 20 /var/log/trade-collector/app.log 2>/dev/null || echo 'Файл логов еще не создан'
-          "
       - name: Verify deployment
         run: |
-          echo "🔍 Verifying service..."
-          sleep 20
-          
-          MAX_RETRIES=3
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "Attempt $i/$MAX_RETRIES..."
-            if curl -f -s --max-time 10 "http://$VPS_HOST:8080/health"; then
-              echo "✅ Service is working!"
-              exit 0
-            fi
-            sleep 10
-          done
-          
-          echo "❌ Service is not responding"
-          echo "For diagnostics run:"
-          echo "ssh $VPS_USER@$VPS_HOST 'sudo journalctl -u trade-collector -n 50'"
-          exit 1
+          # Даем права и запускаем
+          chmod +x scripts/verify-deployment.sh
+          ./scripts/verify-deployment.sh
