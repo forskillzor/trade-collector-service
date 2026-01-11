@@ -211,44 +211,49 @@ jobs:
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
           
-          # Копируем файлы на сервер
+          # 1. Копируем все файлы
           scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
           
-          # Выполняем деплой (без heredoc, без sudo -S)
+          # 2. Деплой с подробной отладкой
           ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" "
             set -e
           
             APP_NAME='trade-collector'
-            APP_USER='trader'
+            APP_USER='deploy'          # Один пользователь для всего!
             APP_DIR='/opt/\$APP_NAME'
           
-            echo '=== STARTING DEPLOYMENT ==='
+            echo '=== 1. DEBUG /tmp/deploy ==='
+            ls -la /tmp/deploy/
           
-            # Создаем директории и копируем файлы
-            sudo mkdir -p \"\$APP_DIR\" '/var/log/$APP_NAME'
-            sudo cp /tmp/deploy/trade-collector.jar \"\$APP_DIR/\"
+            echo '=== 2. Создаем структуру ==='
+            sudo mkdir -p \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
           
-            # Копируем дополнительные файлы если есть
-            [ -f '/tmp/deploy/run.sh' ] && sudo cp '/tmp/deploy/run.sh' \"\$APP_DIR/\"
-            [ -f '/tmp/deploy/config.json' ] && sudo cp '/tmp/deploy/config.json' \"\$APP_DIR/\"
-            [ -f \"\$APP_DIR/run.sh\" ] && sudo chmod +x \"\$APP_DIR/run.sh\"
+            echo '=== 3. Копируем ВСЕ файлы ==='
+            sudo cp -v /tmp/deploy/* \"\$APP_DIR/\" 2>&1 || { echo '❌ Копирование провалилось!'; exit 1; }
           
-            # Если есть systemd service файл
-            [ -f '/tmp/deploy/trade-collector.service' ] && sudo cp '/tmp/deploy/trade-collector.service' /etc/systemd/system/
+            echo '=== 4. Исправляем права ==='
+            sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
+            sudo chmod 755 \"\$APP_DIR/run.sh\"
+            sudo chmod 644 \"\$APP_DIR\"/*.jar \"\$APP_DIR\"/*.json 2>/dev/null || true
           
-            # Настраиваем права
-            sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" '/var/log/$APP_NAME'
+            echo '=== 5. Проверяем файлы ==='
+            ls -la \"\$APP_DIR/\"
+            sudo -u \$APP_USER test -x \"\$APP_DIR/run.sh\" && echo '✅ run.sh исполняемый' || echo '❌ run.sh проблема'
           
-            # Перезапускаем сервис
+            echo '=== 6. Устанавливаем сервис ==='
+            sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/\$APP_NAME.service
+            sudo sed -i 's/User=trader/User=deploy/' /etc/systemd/system/\$APP_NAME.service
+            sudo sed -i 's/Group=trader/Group=deploy/' /etc/systemd/system/\$APP_NAME.service
+          
             sudo systemctl daemon-reload
-            sudo systemctl enable \"\$APP_NAME\" 2>/dev/null || true
-            sudo systemctl restart \"\$APP_NAME\"
+            sudo systemctl enable \$APP_NAME.service
+            sudo systemctl restart \$APP_NAME.service
           
-            echo '✅ Deployment completed'
-          
-            echo '📊 Checking status...'
+            echo '=== 7. Финальная проверка ==='
             sleep 3
-            sudo systemctl status \"\$APP_NAME\" --no-pager | head -20
+            sudo systemctl status \$APP_NAME.service --no-pager -l
+            echo '=== Логи ==='
+            sudo journalctl -u \$APP_NAME.service -n 10 --no-pager
           "
       - name: Verify deployment
         run: |
