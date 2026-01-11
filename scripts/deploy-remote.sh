@@ -29,7 +29,6 @@ sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
 # 3. Копируем файлы
 echo "📄 Copying files..."
 sudo cp -rv /tmp/deploy/* "$APP_DIR/"
-sudo cp config.json deploy-package/
 
 # 4. Создаем .env файл для хранения секретов (ДО установки прав)
 echo "🔒 Creating environment file..."
