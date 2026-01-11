@@ -122,45 +122,6 @@ CREATE TABLE IF NOT EXISTS volume_windows
     UNIQUE (exchange, symbol, start_time, end_time)
 );
 
--- Функция для автоматического создания партиций
--- CREATE OR REPLACE FUNCTION create_trade_partitions() RETURNS void AS
--- $$
--- DECLARE
---     partition_name TEXT;
---     start_date     DATE;
---     end_date       DATE;
--- BEGIN
---     -- Для raw_trades: дневные партиции
---     start_date := CURRENT_DATE;
---     end_date := start_date + INTERVAL '1 day';
---     partition_name := 'raw_trades_' || to_char(start_date, 'YYYY_MM_DD');
---
---     EXECUTE format('
---         CREATE TABLE IF NOT EXISTS %I
---         PARTITION OF raw_trades
---         FOR VALUES FROM (%L) TO (%L)',
---                    partition_name,
---                    EXTRACT(EPOCH FROM start_date) * 1000,
---                    EXTRACT(EPOCH FROM end_date) * 1000
---             );
---
--- -- Для filtered_trades: недельные партиции
---     start_date := DATE_TRUNC('week', CURRENT_DATE);
---     end_date := start_date + INTERVAL '1 week';
---     partition_name := 'filtered_trades_' || to_char(start_date, 'YYYY_MM_DD');
---
---     EXECUTE format('
---         CREATE TABLE IF NOT EXISTS %I
---         PARTITION OF filtered_trades
---         FOR VALUES FROM (%L) TO (%L)',
---                    partition_name,
---                    EXTRACT(EPOCH FROM start_date) * 1000,
---                    EXTRACT(EPOCH FROM end_date) * 1000
---             );
---
---     RAISE NOTICE 'Created partitions for %', CURRENT_DATE;
--- END;
--- $$ LANGUAGE plpgsql;
 
 -- Функция для очистки старых raw_trades (храним только 1 миллион последних сделок)
 CREATE OR REPLACE FUNCTION cleanup_old_raw_trades()
