@@ -29,8 +29,14 @@ scp -i "$SSH_KEY_FILE" scripts/deploy-remote.sh "$VPS_USER@$VPS_HOST:/tmp/"
 # Выполняем деплой
 echo "🔄 Executing deployment script on server..."
 ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
+  # Отключаем history expansion
+  set +H
+  # Экспортируем переменные окружения
+  export DB_PASSWORD='$DB_PASSWORD'
+  export VPS_HOST='$VPS_HOST'
+  export VPS_USER='$VPS_USER'
+
   chmod +x /tmp/deploy-remote.sh
   /tmp/deploy-remote.sh
 "
-
 echo "✅ Deployment completed!"

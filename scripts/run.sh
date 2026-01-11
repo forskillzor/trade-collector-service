@@ -8,6 +8,19 @@ echo "Java version:"
 java -version 2>&1
 echo ""
 
+# Загружаем .env файл если существует
+if [ -f ".env" ]; then
+    echo "📁 Loading environment variables from .env"
+    set -a  # Автоматически экспортировать все переменные
+    source .env
+    set +a
+fi
+
+echo "🔧 Processing config.json with environment variables..."
+envsubst < config.json > config-runtime.json
+
+echo "Using processed config: config-runtime.json"
+
 # JVM параметры
 JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
 JVM_OPTS="$JVM_OPTS -XX:+UseG1GC"

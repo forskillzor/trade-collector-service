@@ -27,6 +27,8 @@ jobs:
           ./gradlew shadowJar
 
       - name: Prepare package
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           # Даем права на выполнение и запускаем скрипт
           chmod +x scripts/prepare-package.sh
@@ -67,6 +69,9 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Check server (optional)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           # Даем права и запускаем
           chmod +x scripts/check-server.sh

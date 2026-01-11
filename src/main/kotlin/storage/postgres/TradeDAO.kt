@@ -21,7 +21,7 @@ class TradeDAO(
             val hikariConfig = HikariConfig().apply {
                 jdbcUrl = "jdbc:postgresql://${config.host}:${config.port}/${config.database}"
                 username = config.username
-                password = config.password
+                password = config.resolvedPassword
                 maximumPoolSize = 15
                 minimumIdle = 5
                 connectionTimeout = 30000

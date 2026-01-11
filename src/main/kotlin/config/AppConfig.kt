@@ -22,10 +22,15 @@ data class DatabaseConfig(
     val port: Int = 6432,
     val database: String = "trade_collector",
     val username: String = "trade_user",
-    val password: String = "your_password_here",
+    val password: String? = null,
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000
-)
+) {
+    val resolvedPassword: String
+        get() = password ?: System.getenv("DB_PASSWORD")
+
+        ?: throw IllegalStateException("Database password not configured!")
+}
 
 @Serializable
 data class ProcessorConfig(

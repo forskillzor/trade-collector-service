@@ -78,9 +78,8 @@ CREATE TABLE IF NOT EXISTS filtered_trades
 
     -- Технические поля
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    batch_id             UUID,
+    batch_id             UUID
 
-    PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 
 -- Индексы для фильтрованных сделок

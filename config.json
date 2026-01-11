@@ -9,10 +9,9 @@
   "database": {
     "type": "postgresql",
     "host": "95.81.99.28",
-    "port": 5432,
+    "port": 6432,
     "database": "trade_collector",
     "username": "trade_user",
-    "password": "JXDsdSZzXx1221!!!",
     "batchSize": 1000,
     "flushIntervalMs": 1000
   },
