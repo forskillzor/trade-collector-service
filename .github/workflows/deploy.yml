@@ -221,73 +221,128 @@ jobs:
             APP_USER='deploy'
             APP_DIR='/opt/\$APP_NAME'
 
-            echo '=== 0. ПРОВЕРЯЕМ JAVA ==='
-            echo 'Java версия:'
-            java -version 2>&1 || echo '❌ Java не установлена!'
-            echo 'Путь к java:'
-            which java || echo '❌ Java не найдена в PATH!'
+            echo '=== 0. УСТАНАВЛИВАЕМ JAVA 21 ==='
+            # Проверяем текущую Java
+            echo 'Текущая Java:'
+            java -version 2>&1
             echo ''
+
+            # Устанавливаем Java 21 если нужно
+            if ! java -version 2>&1 | grep -q '\"21\.'; then
+              echo 'Устанавливаем Java 21...'
+              sudo apt-get update
+              sudo apt-get install -y openjdk-21-jre-headless
+
+              # Устанавливаем альтернативы
+              sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java || true
+
+              echo 'Проверяем Java 21:'
+              java -version 2>&1
+            else
+              echo '✅ Java 21 уже установлена'
+            fi
+            echo ''
+
             echo '=== 1. DEBUG /tmp/deploy ==='
             ls -la /tmp/deploy/
-            echo ''
-            echo '=== Проверяем шебанг run.sh ==='
-            head -1 /tmp/deploy/run.sh
-            echo ''
-            echo '=== Проверяем конец строк run.sh ==='
-            cat -A /tmp/deploy/run.sh || true
             echo ''
 
             echo '=== 2. Создаем структуру ==='
             sudo mkdir -p \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
 
             echo '=== 3. Копируем ВСЕ файлы ==='
-            sudo cp -v /tmp/deploy/* \"\$APP_DIR/\" 2>&1 || { echo '❌ Копирование провалилось!'; exit 1; }
+            sudo cp -v /tmp/deploy/* \"\$APP_DIR/\" 2>&1
 
             echo '=== 4. Исправляем права ==='
             sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
             sudo chmod 755 \"\$APP_DIR/run.sh\"
-            sudo chmod 644 \"\$APP_DIR\"/*.jar \"\$APP_DIR\"/*.json 2>/dev/null || true
+            sudo chmod 644 \"\$APP_DIR\"/*.jar \"\$APP_DIR\"/*.json
 
             echo '=== 5. Проверяем файлы ==='
             ls -la \"\$APP_DIR/\"
-            sudo -u \$APP_USER test -x \"\$APP_DIR/run.sh\" && echo '✅ run.sh исполняемый' || echo '❌ run.sh проблема'
             echo ''
-            echo '=== Тестируем запуск от имени пользователя deploy ==='
-            sudo -u \$APP_USER sh -c \"cd \$APP_DIR && echo 'Рабочая директория:' && pwd && echo 'Проверяем Java:' && java -version 2>&1 || echo 'Java не найдена' && echo 'Запускаем скрипт:' && ./run.sh --help || true\"
 
-            echo '=== 6. Устанавливаем сервис ==='
+            echo '=== 5a. Проверяем JAR файл ==='
+            # Проверяем манифест JAR файла
+            echo 'Версия Java в манифесте JAR:'
+            unzip -p \"\$APP_DIR/trade-collector.jar\" META-INF/MANIFEST.MF | grep -i 'build-jdk' || true
+            echo ''
+
+            echo '=== 5b. Тестируем запуск JAR напрямую ==='
+            cd \"\$APP_DIR\"
+            echo 'Проверяем Java 21:'
+            /usr/bin/java -version 2>&1
+            echo ''
+            echo 'Пробуем запустить JAR с минимальными параметрами:'
+            sudo -u \$APP_USER sh -c \"cd \$APP_DIR && /usr/bin/java -jar trade-collector.jar --version 2>&1 || /usr/bin/java -jar trade-collector.jar --help 2>&1 || echo '❌ Не удалось запустить JAR'\"
+            echo ''
+
+            echo '=== 6. Обновляем service файл ==='
             sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/\$APP_NAME.service
             sudo sed -i 's/User=trader/User=deploy/' /etc/systemd/system/\$APP_NAME.service
             sudo sed -i 's/Group=trader/Group=deploy/' /etc/systemd/system/\$APP_NAME.service
 
-            echo '=== 6a. Исправляем путь к Java в сервисе (вариант A) ==='
-            # Добавляем явный путь к Java в ExecStart
-            JAVA_PATH=\$(which java)
-            if [ -n \"\$JAVA_PATH\" ]; then
-              echo \"Java найдена по пути: \$JAVA_PATH\"
-              sudo sed -i \"s|ExecStart=/opt/trade-collector/run.sh|ExecStart=\$JAVA_PATH -jar /opt/trade-collector/trade-collector.jar --config /opt/trade-collector/config.json|\" /etc/systemd/system/\$APP_NAME.service
-            else
-              echo \"⚠️ Java не найдена! Устанавливаем...\"
-              sudo apt-get update
-              sudo apt-get install -y openjdk-21-jre-headless
-              JAVA_PATH=\$(which java)
-            fi
+            # Создаем новый service файл с правильными параметрами
+            cat << 'EOF' | sudo tee /etc/systemd/system/\$APP_NAME.service
+          
+            [Unit]
+            Description=Trade Collector Service
+            After=network.target
+            Wants=postgresql.service
 
+            [Service]
+            Type=simple
+            User=deploy
+            Group=deploy
+            WorkingDirectory=/opt/trade-collector
+
+            # Запуск с отладкой
+            Environment=JAVA_OPTS=\"-Xmx512m -Xms256m -XX:+UseG1GC -Dlogging.level.root=DEBUG\"
+            Environment=SPRING_PROFILES_ACTIVE=production
+            ExecStart=/usr/bin/java \
+              --add-opens=java.base/java.nio=ALL-UNNAMED \
+              --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+              -XX:MaxRAMPercentage=75.0 \
+              -jar /opt/trade-collector/trade-collector.jar \
+              --config /opt/trade-collector/config.json
+            SuccessExitStatus=143
+            Restart=always
+            RestartSec=10
+            StandardOutput=append:/var/log/trade-collector/app.log
+            StandardError=append:/var/log/trade-collector/error.log
+
+            # Важно: задаем окружение для systemd
+            Environment=\"JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64\"
+            Environment=\"PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin:/usr/bin:/bin\"
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            echo '=== 7. Перезагружаем и запускаем ==='
             sudo systemctl daemon-reload
             sudo systemctl enable \$APP_NAME.service
 
-            echo '=== 7. Запускаем сервис ==='
+            echo '=== 8. Сначала проверяем конфигурацию ==='
+            sudo systemctl show \$APP_NAME.service -p Environment,ExecStart --no-pager
+            echo ''
+
+            echo '=== 9. Запускаем сервис ==='
             sudo systemctl restart \$APP_NAME.service
 
-            echo '=== 8. Финальная проверка ==='
-            sleep 3
+            echo '=== 10. Проверяем статус ==='
+            sleep 5
             sudo systemctl status \$APP_NAME.service --no-pager -l
-            echo ''
-            echo '=== Логи сервиса (первые 30 строк) ==='
-            sudo journalctl -u \$APP_NAME.service -n 30 --no-pager
-            echo ''
-            echo '=== Проверяем процесс ==='
-            ps aux | grep java | grep -v grep || echo '❌ Java процесс не запущен'
+
+            echo '=== 11. Смотрим логи (первые 50 строк) ==='
+            sudo journalctl -u \$APP_NAME.service -n 50 --no-pager
+
+            echo '=== 12. Проверяем процессы ==='
+            ps aux | grep -E '(java|trade)' | grep -v grep || echo 'Процесс не найден'
+
+            echo '=== 13. Проверяем логи приложения ==='
+            sudo tail -n 20 /var/log/trade-collector/error.log 2>/dev/null || echo 'Файл логов еще не создан'
+            sudo tail -n 20 /var/log/trade-collector/app.log 2>/dev/null || echo 'Файл логов еще не создан'
           "
       - name: Verify deployment
         run: |
