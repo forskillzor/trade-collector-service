@@ -25,10 +25,11 @@ sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
 echo "📄 Copying files..."
 sudo cp -v /tmp/deploy/* "$APP_DIR/"
 
-# 4. Устанавливаем права
+# 4. Устанавливаем права ← ДОБАВЬ ЭТО
 echo "🔐 Setting permissions..."
 sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
 sudo chmod 755 "$APP_DIR/run.sh"
+sudo chmod 755 "$APP_DIR/trade-collector.jar"  # ← ВАЖНО: даем execute права на JAR
 
 # 5. Конфигурируем базу данных (если нужно)
 if [ -n "$DB_PASSWORD" ]; then
@@ -58,7 +59,8 @@ sudo systemctl restart $APP_NAME.service
 
 # 8. Проверяем статус
 echo "📊 Checking service status..."
-sleep 3
-sudo systemctl status $APP_NAME.service --no-pager | head -20
+sleep 5
+echo "=== Service Status ==="
+sudo systemctl status $APP_NAME.service --no-pager -l
 
 echo "=== DEPLOYMENT COMPLETED ==="
