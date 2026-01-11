@@ -86,13 +86,68 @@ jobs:
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to $VPS_HOST..."
-          # Скрипты находятся в корне репозитория
-          ls -la scripts/ || echo "scripts/ not found"
-          ls -la ./
           
+          echo "📂 Current directory contents:"
+          pwd
+          ls -la
+          
+          echo "📂 scripts directory contents:"
+          ls -la scripts/ 2>/dev/null || echo "scripts/ directory not found"
+          
+          echo "📂 deploy.sh availability:"
+          find . -name "deploy.sh" -type f | head -5
+          
+          # Если deploy.sh не найден, создаем его inline
+          if [ ! -f "scripts/deploy.sh" ]; then
+            echo "📝 Creating deploy.sh from current directory..."
+            echo '#!/bin/bash
+          set -e
+          
+          echo "🚀 Deploying from GitHub Actions..."
+          
+          # Проверяем обязательные переменные
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
+          echo "❌ ERROR: Missing required environment variables"
+          exit 1
+          fi
+          
+          echo "Deploying to $VPS_HOST..."
+          
+          # Настройка SSH
+          SSH_KEY_FILE="$HOME/.ssh/vps_key"
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" | tr -d '\r' > "$SSH_KEY_FILE"
+          chmod 600 "$SSH_KEY_FILE"
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # Копируем файлы
+          echo "📦 Copying files to server..."
+          scp -i "$SSH_KEY_FILE" -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
+          
+          # Выполняем деплой
+          echo "🔄 Executing deployment script on server..."
+          ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
+          # Экспортируем переменные
+          export DB_PASSWORD='$DB_PASSWORD'
+          export DB_HOST='$DB_HOST'
+          export DB_PORT='$DB_PORT'
+          export DB_USER='$DB_USER'
+          export DB_NAME='$DB_NAME'
+
           # Запускаем деплой
-          chmod +x ./scripts/deploy.sh
+          cd /tmp/deploy
+          chmod +x deploy-remote.sh
+          ./deploy-remote.sh
+          "
+
+          echo "✅ Deployment completed!"' > deploy-temp.sh
+          chmod +x deploy-temp.sh
+          ./deploy-temp.sh
+          else
+          echo "✅ Using existing deploy.sh"
+          chmod +x scripts/deploy.sh
           ./scripts/deploy.sh
+          fi
 
       # 6. Проверка деплоя
       - name: Verify deployment
