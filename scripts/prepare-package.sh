@@ -23,23 +23,13 @@ cp scripts/run.sh deploy-package/
 cp scripts/deploy-remote.sh deploy-package/  # ← добавляем этот файл
 
 # Создаем config.json
-echo "⚙️ Creating config.json..."
-cat > deploy-package/config.json << 'EOF'
-{
-  "server": {
-    "port": 8080,
-    "host": "0.0.0.0"
-  },
-  "database": {
-    "url": "jdbc:postgresql://localhost:5432/trade_collector",
-    "user": "trade_user",
-    "driver": "org.postgresql.Driver"
-  },
-  "logging": {
-    "level": "INFO"
-  }
-}
-EOF
+echo "📄 Copying existing config.json..."
+if [ -f "config.json" ]; then
+    cp config.json deploy-package/
+else
+    echo "❌ ERROR: Real config.json not found! Please add it to project root"
+    exit 1
+fi
 
 # Если есть пароль БД, добавляем его
 if [ -n "$DB_PASSWORD" ]; then
