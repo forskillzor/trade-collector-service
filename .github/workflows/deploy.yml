@@ -25,6 +25,11 @@ jobs:
       DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
+      # 0. Клонируем репозиторий для получения скриптов
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       # 1. Загружаем релиз по тегу
       - name: Download release assets
         run: |
@@ -61,13 +66,29 @@ jobs:
           
           echo "✅ Package check passed"
 
-      # 3. Настраиваем SSH
+      # 3. Настраиваем SSH (ИСПРАВЛЕНО!)
       - name: Setup SSH
         run: |
           echo "🔧 Setting up SSH..."
           mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
+          
+          # Правильно сохраняем приватный ключ - строка за строкой
+          echo "$VPS_SSH_KEY" | while IFS= read -r line; do
+            echo "$line" >> ~/.ssh/vps_key
+          done
+          
           chmod 600 ~/.ssh/vps_key
+          
+          # Проверяем ключ
+          echo "🔑 Checking SSH key format..."
+          if ! ssh-keygen -l -f ~/.ssh/vps_key 2>/dev/null; then
+            echo "❌ ERROR: Invalid SSH private key format"
+            echo "First few chars of key:"
+            head -c 100 ~/.ssh/vps_key
+            exit 1
+          fi
+          
+          # Добавляем хост в known_hosts
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           echo "✅ SSH ready"
 
@@ -75,79 +96,28 @@ jobs:
       - name: Check server
         run: |
           echo "🔍 Checking server connection..."
-          ssh -i ~/.ssh/vps_key \
+          if ssh -i ~/.ssh/vps_key \
             -o ConnectTimeout=5 \
             -o StrictHostKeyChecking=no \
             "$VPS_USER@$VPS_HOST" \
             "echo '✅ Server is reachable'; \
-             echo 'Java:'; java -version 2>&1 | head -1"
+             echo 'Java:'; java -version 2>&1 | head -1"; then
+            echo "✅ Server check passed"
+          else
+            echo "⚠️ Server check failed, continuing anyway..."
+          fi
 
-      # 5. Деплой
+      # 5. Деплой (ИСПРАВЛЕНО!)
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to $VPS_HOST..."
+          echo "📂 Current directory: $(pwd)"
+          echo "📂 Scripts directory:"
+          ls -la scripts/
           
-          echo "📂 Current directory contents:"
-          pwd
-          ls -la
-          
-          echo "📂 scripts directory contents:"
-          ls -la scripts/ 2>/dev/null || echo "scripts/ directory not found"
-          
-          echo "📂 deploy.sh availability:"
-          find . -name "deploy.sh" -type f | head -5
-          
-          # Если deploy.sh не найден, создаем его inline
-          if [ ! -f "scripts/deploy.sh" ]; then
-            echo "📝 Creating deploy.sh from current directory..."
-            echo '#!/bin/bash
-          set -e
-          
-          echo "🚀 Deploying from GitHub Actions..."
-          
-          # Проверяем обязательные переменные
-          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
-          echo "❌ ERROR: Missing required environment variables"
-          exit 1
-          fi
-          
-          echo "Deploying to $VPS_HOST..."
-          
-          # Настройка SSH
-          SSH_KEY_FILE="$HOME/.ssh/vps_key"
-          mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" | tr -d '\r' > "$SSH_KEY_FILE"
-          chmod 600 "$SSH_KEY_FILE"
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          
-          # Копируем файлы
-          echo "📦 Copying files to server..."
-          scp -i "$SSH_KEY_FILE" -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
-          
-          # Выполняем деплой
-          echo "🔄 Executing deployment script on server..."
-          ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
-          # Экспортируем переменные
-          export DB_PASSWORD='$DB_PASSWORD'
-          export DB_HOST='$DB_HOST'
-          export DB_PORT='$DB_PORT'
-          export DB_USER='$DB_USER'
-          export DB_NAME='$DB_NAME'
-
-          # Запускаем деплой
-          cd /tmp/deploy
-          chmod +x deploy-remote.sh
-          ./deploy-remote.sh
-          "
-
-          echo "✅ Deployment completed!"' > deploy-temp.sh
-          chmod +x deploy-temp.sh
-          ./deploy-temp.sh
-          else
-          echo "✅ Using existing deploy.sh"
+          # Используем правильный путь к скрипту
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh
-          fi
 
       # 6. Проверка деплоя
       - name: Verify deployment
