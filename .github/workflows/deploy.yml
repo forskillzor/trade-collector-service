@@ -1,17 +1,20 @@
-name: Deploy Collector
+name: Deploy Trade Collector
 
 on:
   workflow_dispatch:
     inputs:
-      artifact_version:
-        description: 'Версия артефакта (оставить пустым для последнего)'
+      build_run_id:
+        description: 'ID запуска сборки (оставьте пустым для последнего)'
         required: false
         type: string
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     env:
+      APP_NAME: trade-collector
+      APP_USER: deploy
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -22,25 +25,63 @@ jobs:
       DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
-      - name: Download latest artifact
+      # 1. Загружаем артефакт из предыдущего билда
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: trade-collector-package
           path: ./deploy-package
 
-      - name: Setup SSH environment
+      # 2. Проверяем что загрузилось
+      - name: Check downloaded package
         run: |
+          echo "📦 Downloaded package contents:"
+          ls -la deploy-package/
+          
+          # Проверяем необходимые файлы
+          if [ ! -f "deploy-package/trade-collector.jar" ]; then
+            echo "❌ ERROR: JAR file not found!"
+            exit 1
+          fi
+          
+          if [ ! -f "deploy-package/config.json" ]; then
+            echo "❌ ERROR: config.json not found!"
+            exit 1
+          fi
+          
+          echo "✅ Package check passed"
+
+      # 3. Настраиваем SSH
+      - name: Setup SSH
+        run: |
+          echo "🔧 Setting up SSH..."
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "✅ SSH ready"
 
+      # 4. Проверяем сервер (опционально)
+      - name: Check server
+        run: |
+          echo "🔍 Checking server connection..."
+          ssh -i ~/.ssh/vps_key \
+            -o ConnectTimeout=5 \
+            -o StrictHostKeyChecking=no \
+            "$VPS_USER@$VPS_HOST" \
+            "echo '✅ Server is reachable'; \
+             echo 'Java:'; java -version 2>&1 | head -1"
+
+      # 5. Деплой
       - name: Deploy to server
         run: |
+          echo "🚀 Starting deployment to $VPS_HOST..."
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh
 
+      # 6. Проверка деплоя
       - name: Verify deployment
         run: |
+          echo "🔍 Verifying deployment..."
           chmod +x scripts/verify-deployment.sh
           ./scripts/verify-deployment.sh
