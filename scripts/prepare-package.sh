@@ -22,7 +22,17 @@ cp scripts/trade-collector.service deploy-package/
 cp scripts/run.sh deploy-package/
 cp scripts/deploy-remote.sh deploy-package/  # ← добавляем этот файл
 
-# Создаем config.json
+echo "📄 Copying database scripts..."
+cp scripts/init-database.sh deploy-package/
+cp scripts/001_init_schema.sql deploy-package/ 2>/dev/null || echo "SQL schema not found"
+
+# Копируем SQL схему
+if [ -f "scripts/001_init_schema.sql" ]; then
+    cp scripts/001_init_schema.sql deploy-package/
+    echo "✅ SQL schema copied"
+fi
+
+# Копируем существующий config.json из корня проекта
 echo "📄 Copying existing config.json..."
 if [ -f "config.json" ]; then
     cp config.json deploy-package/
