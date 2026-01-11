@@ -211,9 +211,10 @@ jobs:
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
           
-          # Передача пароля отдельно для sudo -S
+          # Копируем файлы на сервер
           scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
           
+          # Выполняем деплой (без heredoc, без sudo -S)
           ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" "
             set -e
           
@@ -223,24 +224,24 @@ jobs:
           
             echo '=== STARTING DEPLOYMENT ==='
           
-            # Используйте sudo без -S, если настроен NOPASSWD заранее
-            # Или передайте пароль только для первой команды: echo '$SUDO_PASSWORD' | sudo -S bash << 'SUDOEOF'
-            # ...команды...
-            # SUDOEOF
-          
-            sudo useradd -r -s /bin/false \"\$APP_USER\" 2>/dev/null || echo 'User may already exist'
-          
+            # Создаем директории и копируем файлы
             sudo mkdir -p \"\$APP_DIR\" '/var/log/$APP_NAME'
             sudo cp /tmp/deploy/trade-collector.jar \"\$APP_DIR/\"
-            [ -f '/tmp/deploy/run.sh' ] && sudo cp /tmp/deploy/run.sh \"\$APP_DIR/\"
-            [ -f '/tmp/deploy/config.json' ] && sudo cp /tmp/deploy/config.json \"\$APP_DIR/\"
+          
+            # Копируем дополнительные файлы если есть
+            [ -f '/tmp/deploy/run.sh' ] && sudo cp '/tmp/deploy/run.sh' \"\$APP_DIR/\"
+            [ -f '/tmp/deploy/config.json' ] && sudo cp '/tmp/deploy/config.json' \"\$APP_DIR/\"
             [ -f \"\$APP_DIR/run.sh\" ] && sudo chmod +x \"\$APP_DIR/run.sh\"
           
-            sudo cp \"\$APP_DIR/trade-collector.service\" /etc/systemd/system/
+            # Если есть systemd service файл
+            [ -f '/tmp/deploy/trade-collector.service' ] && sudo cp '/tmp/deploy/trade-collector.service' /etc/systemd/system/
+          
+            # Настраиваем права
             sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" '/var/log/$APP_NAME'
           
+            # Перезапускаем сервис
             sudo systemctl daemon-reload
-            sudo systemctl enable \"\$APP_NAME\"
+            sudo systemctl enable \"\$APP_NAME\" 2>/dev/null || true
             sudo systemctl restart \"\$APP_NAME\"
           
             echo '✅ Deployment completed'
