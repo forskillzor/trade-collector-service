@@ -9,47 +9,55 @@ if [ -z "$DB_PASSWORD" ]; then
     exit 1
 fi
 
-echo "🔧 Configuring PostgreSQL..."
+# Используем переменные с дефолтными значениями
+PG_HOST="${DB_HOST:-localhost}"
+PG_PORT="${DB_PORT:-6432}"
+PG_USER="${DB_USER:-trade_user}"
+PG_NAME="${DB_NAME:-trade_collector}"
 
-# 1. Создаем базу данных если её нет
-if ! sudo -u postgres psql -p 6432 -lqt | cut -d \| -f 1 | grep -qw trade_collector; then
-    echo "Creating database trade_collector..."
-    sudo -u postgres psql -p 6432 -c "CREATE DATABASE trade_collector;"
+echo "🔧 Configuring PostgreSQL at $PG_HOST:$PG_PORT..."
+
+# Устанавливаем пароль для psql
+export PGPASSWORD="$DB_PASSWORD"
+
+# 1. Проверяем подключение
+echo "Testing connection..."
+if ! psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d postgres -c "\q" 2>/dev/null; then
+    echo "❌ ERROR: Cannot connect to PostgreSQL at $PG_HOST:$PG_PORT"
+    echo "Make sure:"
+    echo "1. PostgreSQL/PgBouncer is running"
+    echo "2. User $PG_USER exists"
+    echo "3. Host $PG_HOST is accessible"
+    exit 1
+fi
+
+# 2. Создаем базу данных если её нет
+if ! psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d postgres -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$PG_NAME"; then
+    echo "Creating database $PG_NAME..."
+    psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d postgres -c "CREATE DATABASE $PG_NAME;"
     echo "✅ Database created"
 else
-    echo "✅ Database trade_collector already exists"
+    echo "✅ Database $PG_NAME already exists"
 fi
 
-# 2. Создаем пользователя если его нет
-if ! sudo -u postgres psql -p 6432 -c "\du" | grep -qw trade_user; then
-    echo "Creating user trade_user..."
-    sudo -u postgres psql -p 6432 -c "CREATE USER trade_user WITH PASSWORD '$DB_PASSWORD';"
-
-    echo "✅ User created"
-else
-    echo "✅ User trade_user already exists"
-
-    # Обновляем пароль на всякий случай
-    echo "Updating user password..."
-    sudo -u postgres psql -p 6432 -c "ALTER USER trade_user WITH PASSWORD '$DB_PASSWORD';"
-    echo "✅ Password updated"
-fi
-
-# 3. Даем права
+# 3. Даем права (если нужно)
 echo "Granting privileges..."
-sudo -u postgres psql -p 6432 -c "GRANT ALL PRIVILEGES ON DATABASE trade_collector TO trade_user;"
+psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_NAME" -c "GRANT ALL PRIVILEGES ON DATABASE $PG_NAME TO $PG_USER;"
 
 # 4. Выполняем SQL схему если она есть
-if [ -f "/tmp/deploy/001_init_schema.sql" ]; then
-    echo "Executing SQL schema..."
-    sudo -u postgres psql -p 6432 -d trade_collector -f /tmp/deploy/001_init_schema.sql
-    echo "✅ SQL schema applied"
-elif [ -f "/opt/trade-collector/001_init_schema.sql" ]; then
-    echo "Executing SQL schema from /opt/trade-collector..."
-    sudo -u postgres psql -p 6432 -d trade_collector -f /opt/trade-collector/001_init_schema.sql
-    echo "✅ SQL schema applied"
-else
-    echo "⚠️ SQL schema file not found"
-fi
+SCHEMA_FILES=(
+    "/tmp/deploy/001_init_schema.sql"
+    "/opt/trade-collector/001_init_schema.sql"
+    "./001_init_schema.sql"
+)
+
+for schema_file in "${SCHEMA_FILES[@]}"; do
+    if [ -f "$schema_file" ]; then
+        echo "Executing SQL schema from $schema_file..."
+        psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_NAME" -f "$schema_file"
+        echo "✅ SQL schema applied"
+        break
+    fi
+done
 
 echo "✅ Database initialization completed!"

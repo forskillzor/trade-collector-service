@@ -29,8 +29,11 @@ jobs:
       - name: Prepare package
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '6432' }}
+          DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
         run: |
-          # Даем права на выполнение и запускаем скрипт
           chmod +x scripts/prepare-package.sh
           ./scripts/prepare-package.sh
 
@@ -49,6 +52,10 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+      DB_PORT: ${{ secrets.DB_PORT || '6432' }}
+      DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
+      DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
       - name: Checkout repository
@@ -62,7 +69,6 @@ jobs:
 
       - name: Setup SSH environment
         run: |
-          # Подготавливаем SSH ключ (просто сохраняем в файл)
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
@@ -73,18 +79,15 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
-          # Даем права и запускаем
           chmod +x scripts/check-server.sh
           ./scripts/check-server.sh
 
       - name: Deploy to server
         run: |
-          # Даем права и запускаем
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh
 
       - name: Verify deployment
         run: |
-          # Даем права и запускаем
           chmod +x scripts/verify-deployment.sh
           ./scripts/verify-deployment.sh

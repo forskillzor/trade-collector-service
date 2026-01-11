@@ -2,16 +2,19 @@
   "exchanges": [
     {
       "name": "Binance",
-      "symbols": ["ltcusdt"],
+      "symbols": [
+        "ltcusdt"
+      ],
       "enabled": true
     }
   ],
   "database": {
     "type": "postgresql",
-    "host": "95.81.99.28",
-    "port": 6432,
-    "database": "trade_collector",
-    "username": "trade_user",
+    "host": "${DB_HOST:-95.81.99.28}",
+    "port": "${DB_PORT:-6432}",
+    "database": "${DB_NAME:-trade_collector}",
+    "username": "${DB_USER:-trade_user}",
+    "password": "${DB_PASSWORD}",
     "batchSize": 1000,
     "flushIntervalMs": 1000
   },
@@ -19,7 +22,11 @@
     "windowSize": 1000000,
     "slideStep": 100000,
     "filterPercentile": 0.98,
-    "timeframes": ["1m", "5m", "1h"],
+    "timeframes": [
+      "1m",
+      "5m",
+      "1h"
+    ],
     "aggregatesOutputDir": "./aggregates"
   },
   "export": {
