@@ -1,15 +1,69 @@
-name: Deploy Trade Collector
+# .github/workflows/build-and-deploy.yml
+name: Build and Deploy
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
-    inputs:
-      build_run_id:
-        description: 'ID запуска сборки (оставьте пустым для последнего)'
-        required: false
-        type: string
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build shadowJar
+        run: |
+          chmod +x gradlew
+          ./gradlew shadowJar --no-daemon
+
+      - name: Prepare package
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '6432' }}
+          DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
+        run: |
+          chmod +x scripts/prepare-package.sh
+          ./scripts/prepare-package.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-collector-package
+          path: deploy-package/
+          retention-days: 10
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            deploy-package/trade-collector.jar
+            deploy-package/config.json
+          generate_release_notes: true
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
 
     env:
@@ -25,20 +79,17 @@ jobs:
       DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
-      # 1. Загружаем артефакт из предыдущего билда
-      - name: Download artifact from build workflow
-        uses: dawidd6/action-download-artifact@v2
+      - name: Download artifact
+        uses: actions/download-artifact@v4
         with:
-          workflow: build.yml
           name: trade-collector-package
           path: ./deploy-package
-          github_token: ${{ secrets.GITHUB_TOKEN }}      # 2. Проверяем что загрузилось
+
       - name: Check downloaded package
         run: |
           echo "📦 Downloaded package contents:"
           ls -la deploy-package/
           
-          # Проверяем необходимые файлы
           if [ ! -f "deploy-package/trade-collector.jar" ]; then
             echo "❌ ERROR: JAR file not found!"
             exit 1
@@ -51,7 +102,6 @@ jobs:
           
           echo "✅ Package check passed"
 
-      # 3. Настраиваем SSH
       - name: Setup SSH
         run: |
           echo "🔧 Setting up SSH..."
@@ -61,7 +111,6 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           echo "✅ SSH ready"
 
-      # 4. Проверяем сервер (опционально)
       - name: Check server
         run: |
           echo "🔍 Checking server connection..."
@@ -72,14 +121,12 @@ jobs:
             "echo '✅ Server is reachable'; \
              echo 'Java:'; java -version 2>&1 | head -1"
 
-      # 5. Деплой
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to $VPS_HOST..."
           chmod +x scripts/deploy.sh
           ./scripts/deploy.sh
 
-      # 6. Проверка деплоя
       - name: Verify deployment
         run: |
           echo "🔍 Verifying deployment..."
