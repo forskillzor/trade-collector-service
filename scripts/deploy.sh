@@ -16,11 +16,25 @@ echo "$VPS_SSH_KEY" | tr -d '\r' > "$SSH_KEY_FILE"
 chmod 600 "$SSH_KEY_FILE"
 ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-# Копируем файлы
-echo "📦 Copying files to server..."
-scp -i "$SSH_KEY_FILE" -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
+# 1. Сначала очистим старый deploy на сервере
+echo "🧹 Cleaning old deployment on server..."
+ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "rm -rf /tmp/deploy"
 
-# Выполняем деплой
+# 2. Копируем ВСЕ необходимые файлы
+echo "📦 Copying ALL deployment files to server..."
+
+# Создаем временную директорию со ВСЕМИ файлами
+mkdir -p /tmp/full-deploy
+cp -r deploy-package/* /tmp/full-deploy/
+cp scripts/deploy-remote.sh /tmp/full-deploy/
+cp scripts/init-database.sh /tmp/full-deploy/
+cp scripts/run.sh /tmp/full-deploy/
+cp scripts/trade-collector.service /tmp/full-deploy/
+
+# Копируем на сервер
+scp -i "$SSH_KEY_FILE" -r /tmp/full-deploy/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
+
+# 3. Выполняем деплой
 echo "🔄 Executing deployment script on server..."
 ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
   # Экспортируем переменные
@@ -32,7 +46,8 @@ ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
 
   # Запускаем деплой
   cd /tmp/deploy
-  chmod +x deploy-remote.sh
+  ls -la  # Покажем что скопировалось
+  chmod +x deploy-remote.sh init-database.sh run.sh
   ./deploy-remote.sh
 "
 
