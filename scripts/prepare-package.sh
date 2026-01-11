@@ -16,15 +16,12 @@ fi
 echo "Using JAR file: $JAR_FILE"
 cp "$JAR_FILE" deploy-package/trade-collector.jar
 
-# Копируем ВСЕ скрипты которые понадобятся на сервере
+# Копируем скрипты
 echo "📄 Copying scripts..."
 cp scripts/trade-collector.service deploy-package/
 cp scripts/run.sh deploy-package/
-cp scripts/deploy-remote.sh deploy-package/  # ← добавляем этот файл
-
-echo "📄 Copying database scripts..."
+cp scripts/deploy-remote.sh deploy-package/
 cp scripts/init-database.sh deploy-package/
-cp scripts/001_init_schema.sql deploy-package/ 2>/dev/null || echo "SQL schema not found"
 
 # Копируем SQL схему
 if [ -f "scripts/001_init_schema.sql" ]; then
@@ -32,21 +29,15 @@ if [ -f "scripts/001_init_schema.sql" ]; then
     echo "✅ SQL schema copied"
 fi
 
-# Копируем существующий config.json из корня проекта
-echo "📄 Copying existing config.json..."
+# Копируем config.json БЕЗ изменений
+echo "📄 Copying config.json..."
 if [ -f "config.json" ]; then
     cp config.json deploy-package/
+    echo "✅ config.json copied (original)"
 else
-    echo "❌ ERROR: Real config.json not found! Please add it to project root"
+    echo "❌ ERROR: config.json not found!"
     exit 1
 fi
 
-# Если есть пароль БД, добавляем его
-if [ -n "$DB_PASSWORD" ]; then
-    echo "🔧 Adding database password to config..."
-    sed -i '/"user": "trade_user",/a\    "password": "'"$DB_PASSWORD"'",' deploy-package/config.json
-fi
-
 echo "✅ Package prepared successfully!"
-echo "📁 Package contents:"
 ls -la deploy-package/

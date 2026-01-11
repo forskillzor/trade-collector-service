@@ -4,7 +4,7 @@ DROP TABLE IF EXISTS raw_trades CASCADE;
 -- 1. Таблица для сырых сделок (raw_trades)
 CREATE TABLE IF NOT EXISTS raw_trades
 (
-    id         BIGSERIAL      PRIMARY KEY ,
+    id         BIGSERIAL PRIMARY KEY,
     exchange   VARCHAR(20)    NOT NULL,
     symbol     VARCHAR(20)    NOT NULL,
     timestamp  BIGINT         NOT NULL,
@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS raw_trades
 );
 
 -- Индексы для быстрого поиска
-CREATE INDEX idx_raw_trades_exchange_symbol ON raw_trades(exchange, symbol);
-CREATE INDEX idx_raw_trades_timestamp ON raw_trades(timestamp DESC);
-CREATE INDEX idx_raw_trades_exchange_symbol_time ON raw_trades(exchange, symbol, timestamp DESC);
+CREATE INDEX idx_raw_trades_exchange_symbol ON raw_trades (exchange, symbol);
+CREATE INDEX idx_raw_trades_timestamp ON raw_trades (timestamp DESC);
+CREATE INDEX idx_raw_trades_exchange_symbol_time ON raw_trades (exchange, symbol, timestamp DESC);
 -- 2. Таблица для агрегированных данных (свечи по ценам)
 CREATE TABLE IF NOT EXISTS aggregates
 (
@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_aggregates_time_range ON aggregates (start_time, 
 -- 3. Таблица для фильтрованных сделок (big trades)
 CREATE TABLE IF NOT EXISTS filtered_trades
 (
-    id                   BIGSERIAL      PRIMARY KEY,
+    id                   BIGSERIAL      NOT NULL,
     exchange             VARCHAR(20)    NOT NULL,
     symbol               VARCHAR(20)    NOT NULL,
     timestamp            BIGINT         NOT NULL,
@@ -71,15 +71,16 @@ CREATE TABLE IF NOT EXISTS filtered_trades
     volume_threshold     DECIMAL(30, 8) NOT NULL, -- пороговый объём на момент сделки
     trade_category       VARCHAR(20),             -- 'large', 'very_large', 'whale'
 
--- Ссылка на окно выборки
+    -- Ссылка на окно выборки
     window_start_time    BIGINT         NOT NULL,
     window_end_time      BIGINT         NOT NULL,
     window_total_trades  INTEGER        NOT NULL,
 
     -- Технические поля
     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    batch_id             UUID
+    batch_id             UUID,
 
+    PRIMARY KEY (id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 
 -- Индексы для фильтрованных сделок
@@ -159,11 +160,11 @@ $$ LANGUAGE plpgsql;
 
 -- Дополнительные индексы для JOIN запросов
 CREATE INDEX IF NOT EXISTS idx_filtered_trades_window_time
-    ON filtered_trades(window_start_time, window_end_time);
+    ON filtered_trades (window_start_time, window_end_time);
 
 CREATE INDEX IF NOT EXISTS idx_volume_windows_time_range
-    ON volume_windows(start_time, end_time);
+    ON volume_windows (start_time, end_time);
 
 -- Для быстрого поиска по времени в raw_trades
 CREATE INDEX IF NOT EXISTS idx_raw_trades_exchange_symbol_time
-    ON raw_trades(exchange, symbol, timestamp DESC);
+    ON raw_trades (exchange, symbol, timestamp DESC);
