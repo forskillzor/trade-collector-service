@@ -7,6 +7,15 @@ APP_DIR="/opt/$APP_NAME"
 
 echo "=== DEPLOYMENT STARTED ==="
 
+echo "=== DEPLOYMENT STARTED ==="
+echo "📋 Deployment environment variables:"
+echo "  DB_HOST: $DB_HOST"
+echo "  DB_PORT: $DB_PORT"
+echo "  DB_USER: $DB_USER"
+echo "  DB_NAME: $DB_NAME"
+echo "  DB_PASSWORD: ******"
+echo ""
+
 # 1. Устанавливаем Java 21
 echo "📦 Installing Java 21..."
 if ! java -version 2>&1 | grep -q '"21\.'; then
