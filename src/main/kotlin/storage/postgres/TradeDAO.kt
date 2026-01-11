@@ -19,8 +19,8 @@ class TradeDAO(
     companion object {
         fun createDataSource(config: DatabaseConfig): HikariDataSource {
             val hikariConfig = HikariConfig().apply {
-                jdbcUrl = "jdbc:postgresql://${config.host}:${config.port}/${config.database}"
-                username = config.username
+                jdbcUrl = "jdbc:postgresql://${config.resolvedHost}:${config.resolvedPort}/${config.resolvedDatabase}"
+                username = config.resolvedUsername
                 password = config.resolvedPassword
                 maximumPoolSize = 15
                 minimumIdle = 5

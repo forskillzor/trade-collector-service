@@ -18,7 +18,7 @@ data class ExchangeConfig(
 @Serializable
 data class DatabaseConfig(
     val type: String = "postgresql",
-    val host: String = "localhost",
+    val host: String = "95.81.99.28",
     val port: Int = 6432,
     val database: String = "trade_collector",
     val username: String = "trade_user",
@@ -26,12 +26,30 @@ data class DatabaseConfig(
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000
 ) {
+    // Вычисляемые свойства для переменных окружения
+    val resolvedHost: String
+        get() = System.getenv("DB_HOST") ?: host
+
+    val resolvedPort: Int
+        get() = System.getenv("DB_PORT")?.toIntOrNull() ?: port
+
+    val resolvedDatabase: String
+        get() = System.getenv("DB_NAME") ?: database
+
+    val resolvedUsername: String
+        get() = System.getenv("DB_USER") ?: username
+
     val resolvedPassword: String
-        get() = password ?: System.getenv("DB_PASSWORD")
+        get() = System.getenv("DB_PASSWORD") ?: password
+        ?: throw IllegalStateException(
+            "Database password not configured! Set DB_PASSWORD environment variable or in config.json"
+        )
 
-        ?: throw IllegalStateException("Database password not configured!")
+    // Для логирования (без пароля)
+    fun getConnectionStringSafe(): String {
+        return "postgresql://${resolvedUsername}@${resolvedHost}:${resolvedPort}/${resolvedDatabase}"
+    }
 }
-
 @Serializable
 data class ProcessorConfig(
     val batchSize: Int = 1000,
