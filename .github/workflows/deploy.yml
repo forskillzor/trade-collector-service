@@ -211,45 +211,44 @@ jobs:
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
           
+          # Передача пароля отдельно для sudo -S
           scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
           
-          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" << 'EOF'
-          set -e
+          ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" "
+            set -e
           
-          APP_NAME="trade-collector"
-          APP_USER="trader"
-          APP_DIR="/opt/\$APP_NAME"
+            APP_NAME='trade-collector'
+            APP_USER='trader'
+            APP_DIR='/opt/\$APP_NAME'
           
-          echo "=== STARTING DEPLOYMENT ==="
+            echo '=== STARTING DEPLOYMENT ==='
           
-          # Сначала настроим sudo без пароля для текущего пользователя
-          echo "Setting up passwordless sudo..."
-          echo "$SUDO_PASSWORD" | sudo -S bash -c 'echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER
-          sudo chmod 440 /etc/sudoers.d/\$USER
+            # Используйте sudo без -S, если настроен NOPASSWD заранее
+            # Или передайте пароль только для первой команды: echo '$SUDO_PASSWORD' | sudo -S bash << 'SUDOEOF'
+            # ...команды...
+            # SUDOEOF
           
-          # Теперь все sudo команды будут работать без пароля
-          sudo useradd -r -s /bin/false "\$APP_USER" 2>/dev/null || echo "User may already exist"
+            sudo useradd -r -s /bin/false \"\$APP_USER\" 2>/dev/null || echo 'User may already exist'
           
-          sudo mkdir -p "\$APP_DIR" "/var/log/\$APP_NAME"
-          sudo cp /tmp/deploy/trade-collector.jar "\$APP_DIR/"
-          [ -f "/tmp/deploy/run.sh" ] && sudo cp /tmp/deploy/run.sh "\$APP_DIR/"
-          [ -f "/tmp/deploy/config.json" ] && sudo cp /tmp/deploy/config.json "\$APP_DIR/"
-          [ -f "\$APP_DIR/run.sh" ] && sudo chmod +x "\$APP_DIR/run.sh"
+            sudo mkdir -p \"\$APP_DIR\" '/var/log/$APP_NAME'
+            sudo cp /tmp/deploy/trade-collector.jar \"\$APP_DIR/\"
+            [ -f '/tmp/deploy/run.sh' ] && sudo cp /tmp/deploy/run.sh \"\$APP_DIR/\"
+            [ -f '/tmp/deploy/config.json' ] && sudo cp /tmp/deploy/config.json \"\$APP_DIR/\"
+            [ -f \"\$APP_DIR/run.sh\" ] && sudo chmod +x \"\$APP_DIR/run.sh\"
           
-          sudo cp "\$APP_DIR/trade-collector.service" /etc/systemd/system/
-          sudo chown -R "\$APP_USER:\$APP_USER" "\$APP_DIR" "/var/log/\$APP_NAME"
+            sudo cp \"\$APP_DIR/trade-collector.service\" /etc/systemd/system/
+            sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" '/var/log/$APP_NAME'
           
-          sudo systemctl daemon-reload
-          sudo systemctl enable "\$APP_NAME"
-          sudo systemctl restart "\$APP_NAME"
+            sudo systemctl daemon-reload
+            sudo systemctl enable \"\$APP_NAME\"
+            sudo systemctl restart \"\$APP_NAME\"
           
-          echo "✅ Deployment completed"
+            echo '✅ Deployment completed'
           
-          echo "📊 Checking status..."
-          sleep 3
-          sudo systemctl status "\$APP_NAME" --no-pager | head -20
-          EOF
-
+            echo '📊 Checking status...'
+            sleep 3
+            sudo systemctl status \"\$APP_NAME\" --no-pager | head -20
+          "
       - name: Verify deployment
         run: |
           echo "🔍 Verifying service..."
