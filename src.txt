@@ -137,15 +137,38 @@ data class ExchangeConfig(
 @Serializable
 data class DatabaseConfig(
     val type: String = "postgresql",
-    val host: String = "localhost",
+    val host: String = "95.81.99.28",
     val port: Int = 6432,
     val database: String = "trade_collector",
     val username: String = "trade_user",
-    val password: String = "your_password_here",
+    val password: String? = null,
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000
-)
+) {
+    // Вычисляемые свойства для переменных окружения
+    val resolvedHost: String
+        get() = System.getenv("DB_HOST") ?: host
 
+    val resolvedPort: Int
+        get() = System.getenv("DB_PORT")?.toIntOrNull() ?: port
+
+    val resolvedDatabase: String
+        get() = System.getenv("DB_NAME") ?: database
+
+    val resolvedUsername: String
+        get() = System.getenv("DB_USER") ?: username
+
+    val resolvedPassword: String
+        get() = System.getenv("DB_PASSWORD") ?: password
+        ?: throw IllegalStateException(
+            "Database password not configured! Set DB_PASSWORD environment variable or in config.json"
+        )
+
+    // Для логирования (без пароля)
+    fun getConnectionStringSafe(): String {
+        return "postgresql://${resolvedUsername}@${resolvedHost}:${resolvedPort}/${resolvedDatabase}"
+    }
+}
 @Serializable
 data class ProcessorConfig(
     val batchSize: Int = 1000,
@@ -328,7 +351,7 @@ import com.aandios.model.Trade
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
     override fun getWebSocketUrl(symbol: String): String {
-        return "wss://stream.binance.com:9443/ws/${symbol.lowercase()}@trade"
+        return "wss://fstream.binance.com/ws/${symbol.lowercase()}@trade"
     }
 
     override fun parseTrade(json: String, symbol: String): Trade? {
@@ -1747,9 +1770,9 @@ class TradeDAO(
     companion object {
         fun createDataSource(config: DatabaseConfig): HikariDataSource {
             val hikariConfig = HikariConfig().apply {
-                jdbcUrl = "jdbc:postgresql://${config.host}:${config.port}/${config.database}"
-                username = config.username
-                password = config.password
+                jdbcUrl = "jdbc:postgresql://${config.resolvedHost}:${config.resolvedPort}/${config.resolvedDatabase}"
+                username = config.resolvedUsername
+                password = config.resolvedPassword
                 maximumPoolSize = 15
                 minimumIdle = 5
                 connectionTimeout = 30000

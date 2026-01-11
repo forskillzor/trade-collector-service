@@ -35,20 +35,5 @@ ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
   chmod +x deploy-remote.sh
   ./deploy-remote.sh
 "
-# Создаем config с подстановкой переменных
-cat > "$APP_DIR/config-runtime.json" << 'EOF'
-{
-  "database": {
-    "host": "${DB_HOST}",
-    "port": ${DB_PORT},
-    "database": "${DB_NAME}",
-    "username": "${DB_USER}",
-    "password": "${DB_PASSWORD}"
-  }
-}
-EOF
-
-# Подставляем переменные
-envsubst < "$APP_DIR/config-runtime.json" > "$APP_DIR/config.json"
 
 echo "✅ Deployment completed!"

@@ -19,7 +19,7 @@ data class ExchangeConfig(
 data class DatabaseConfig(
     val type: String = "postgresql",
     val host: String = "95.81.99.28",
-    val port: Int = 6432,
+    val port: Int = 5432,
     val database: String = "trade_collector",
     val username: String = "trade_user",
     val password: String? = null,

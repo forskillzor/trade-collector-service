@@ -1,7 +1,7 @@
 [Unit]
 Description=Trade Collector Service
-After=network.target pgbouncer.service
-Wants=pgbouncer.service
+After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
@@ -9,11 +9,8 @@ User=deploy
 Group=deploy
 WorkingDirectory=/opt/trade-collector
 
-Environment=DB_PASSWORD=%DB_PASSWORD%
-Environment=DB_HOST=%DB_HOST%
-Environment=DB_PORT=%DB_PORT%
-Environment=DB_USER=%DB_USER%
-Environment=DB_NAME=%DB_NAME%
+# КРИТИЧЕСКИ ВАЖНО: загружаем переменные из файла
+EnvironmentFile=/etc/default/trade-collector
 
 ExecStart=/opt/trade-collector/run.sh
 Restart=on-failure
@@ -21,6 +18,10 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=trade-collector
+
+# Ограничения для стабильной работы
+LimitNOFILE=65536
+LimitNPROC=65536
 
 [Install]
 WantedBy=multi-user.target

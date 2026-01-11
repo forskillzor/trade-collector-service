@@ -4,17 +4,22 @@ set -e
 cd /opt/trade-collector
 
 echo "🚀 Starting Trade Collector Service..."
-echo "📄 Using config.json"
 
-# Systemd автоматически загружает EnvironmentFile
-# Дополнительная проверка
+# Проверка переменных окружения
+echo "📊 Environment variables from systemd:"
+echo "  DB_HOST: ${DB_HOST:-not set}"
+echo "  DB_PORT: ${DB_PORT:-not set}"
+echo "  DB_NAME: ${DB_NAME:-not set}"
+echo "  DB_USER: ${DB_USER:-not set}"
+echo "  DB_PASSWORD: ${DB_PASSWORD:+******}"
+
 if [ -z "$DB_PASSWORD" ]; then
     echo "❌ ERROR: DB_PASSWORD is not set!"
     echo "Please check /etc/default/trade-collector file"
     exit 1
 fi
 
-echo "✅ Database configured: ${DB_HOST:-localhost}:${DB_PORT:-6432}/${DB_NAME:-trade_collector}"
+echo "✅ Database configured via environment variables"
 
 # JVM параметры
 JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"

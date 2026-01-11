@@ -14,15 +14,6 @@ echo "  DB_NAME: $DB_NAME"
 echo "  DB_PASSWORD: ******"
 echo ""
 
-echo "=== DEPLOYMENT STARTED ==="
-echo "📋 Deployment environment variables:"
-echo "  DB_HOST: $DB_HOST"
-echo "  DB_PORT: $DB_PORT"
-echo "  DB_USER: $DB_USER"
-echo "  DB_NAME: $DB_NAME"
-echo "  DB_PASSWORD: ******"
-echo ""
-
 # 1. Устанавливаем Java 21
 echo "📦 Installing Java 21..."
 if ! java -version 2>&1 | grep -q '"21\.'; then
@@ -64,7 +55,7 @@ sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
 sudo chmod 755 "$APP_DIR/run.sh"
 sudo chmod 644 "$APP_DIR/trade-collector.jar" "$APP_DIR/config.json"
 
-# 6. Настраиваем systemd сервис (копируем готовый файл)
+# 6. Настраиваем systemd сервис
 echo "⚙️ Configuring systemd service..."
 if [ -f "$APP_DIR/trade-collector.service" ]; then
     sudo cp "$APP_DIR/trade-collector.service" /etc/systemd/system/
@@ -96,7 +87,7 @@ sudo systemctl start $APP_NAME.service
 
 # 9. Проверяем статус
 echo "📊 Checking service status..."
-sleep 3
+sleep 5
 sudo systemctl status $APP_NAME.service --no-pager -l
 
 # 10. Проверяем что переменные передаются
