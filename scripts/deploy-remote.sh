@@ -6,6 +6,13 @@ APP_USER='deploy'
 APP_DIR="/opt/$APP_NAME"
 
 echo "=== DEPLOYMENT STARTED ==="
+echo "📊 Deployment variables:"
+echo "  DB_HOST: $DB_HOST"
+echo "  DB_PORT: $DB_PORT"
+echo "  DB_USER: $DB_USER"
+echo "  DB_NAME: $DB_NAME"
+echo "  DB_PASSWORD: ******"
+echo ""
 
 echo "=== DEPLOYMENT STARTED ==="
 echo "📋 Deployment environment variables:"
@@ -34,23 +41,22 @@ sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
 echo "📄 Copying files..."
 sudo cp -rv /tmp/deploy/* "$APP_DIR/"
 
-# 4. Создаем systemd environment файл (НЕ .env для приложения)
+# 4. Создаем environment файл для systemd
 echo "🔒 Creating systemd environment file..."
-cat > "/tmp/${APP_NAME}.env" << EOF
-# Database environment variables (override config.json)
-DB_PASSWORD=$DB_PASSWORD
-DB_HOST=$DB_HOST
-DB_PORT=$DB_PORT
-DB_USER=$DB_USER
-DB_NAME=$DB_NAME
+sudo tee /etc/default/trade-collector > /dev/null << EOF
+# Database configuration
+DB_PASSWORD='$DB_PASSWORD'
+DB_HOST='$DB_HOST'
+DB_PORT='$DB_PORT'
+DB_USER='$DB_USER'
+DB_NAME='$DB_NAME'
 
-# Application environment
-APP_NAME=$APP_NAME
+# Application
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 EOF
 
-sudo mv "/tmp/${APP_NAME}.env" "/etc/default/${APP_NAME}"
-sudo chmod 600 "/etc/default/${APP_NAME}"
+sudo chmod 600 /etc/default/trade-collector
+echo "✅ Environment file created: /etc/default/trade-collector"
 
 # 5. Устанавливаем права
 echo "🔐 Setting permissions..."
@@ -58,20 +64,11 @@ sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
 sudo chmod 755 "$APP_DIR/run.sh"
 sudo chmod 644 "$APP_DIR/trade-collector.jar" "$APP_DIR/config.json"
 
-# 6. Настраиваем systemd сервис
+# 6. Настраиваем systemd сервис (копируем готовый файл)
 echo "⚙️ Configuring systemd service..."
 if [ -f "$APP_DIR/trade-collector.service" ]; then
-    # Обновляем EnvironmentFile в service файле
     sudo cp "$APP_DIR/trade-collector.service" /etc/systemd/system/
-
-    # Добавляем загрузку переменных окружения
-    if ! grep -q "EnvironmentFile" /etc/systemd/system/$APP_NAME.service; then
-        sudo sed -i '/\[Service\]/a EnvironmentFile=/etc/default/trade-collector' /etc/systemd/system/$APP_NAME.service
-    fi
-
-    # Проверяем пользователя
-    sudo sed -i 's/User=trader/User=deploy/g' /etc/systemd/system/$APP_NAME.service
-    sudo sed -i 's/Group=trader/Group=deploy/g' /etc/systemd/system/$APP_NAME.service
+    echo "✅ Service file copied to /etc/systemd/system/"
 else
     echo "❌ ERROR: trade-collector.service not found!"
     exit 1
@@ -83,7 +80,6 @@ if [ -n "$DB_PASSWORD" ]; then
     if [ -f "$APP_DIR/init-database.sh" ]; then
         echo "🔧 Running database initialization..."
         sudo chmod +x "$APP_DIR/init-database.sh"
-        # Передаем все переменные БД
         export DB_PASSWORD DB_HOST DB_PORT DB_USER DB_NAME
         sudo -E "$APP_DIR/init-database.sh"
     fi
@@ -100,7 +96,11 @@ sudo systemctl start $APP_NAME.service
 
 # 9. Проверяем статус
 echo "📊 Checking service status..."
-sleep 5
+sleep 3
 sudo systemctl status $APP_NAME.service --no-pager -l
+
+# 10. Проверяем что переменные передаются
+echo "🔍 Checking environment variables in service..."
+sudo systemctl show trade-collector.service | grep -i environment
 
 echo "=== DEPLOYMENT COMPLETED ==="

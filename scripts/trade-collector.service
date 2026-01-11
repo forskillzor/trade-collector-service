@@ -1,22 +1,26 @@
 [Unit]
 Description=Trade Collector Service
-After=network.target
+After=network.target pgbouncer.service
+Wants=pgbouncer.service
 
 [Service]
 Type=simple
 User=deploy
 Group=deploy
 WorkingDirectory=/opt/trade-collector
-ExecStart=/usr/bin/java \
-  --add-opens=java.base/java.nio=ALL-UNNAMED \
-  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
-  -XX:MaxRAMPercentage=75.0 \
-  -jar /opt/trade-collector/trade-collector.jar \
-  --config /opt/trade-collector/config.json
-Restart=always
+
+Environment=DB_PASSWORD=%DB_PASSWORD%
+Environment=DB_HOST=%DB_HOST%
+Environment=DB_PORT=%DB_PORT%
+Environment=DB_USER=%DB_USER%
+Environment=DB_NAME=%DB_NAME%
+
+ExecStart=/opt/trade-collector/run.sh
+Restart=on-failure
 RestartSec=10
-StandardOutput=append:/var/log/trade-collector/app.log
-StandardError=append:/var/log/trade-collector/error.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trade-collector
 
 [Install]
 WantedBy=multi-user.target
