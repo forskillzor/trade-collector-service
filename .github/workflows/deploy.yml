@@ -26,12 +26,13 @@ jobs:
 
     steps:
       # 1. Загружаем артефакт из предыдущего билда
-      - name: Download artifact
+      - name: Download specific build artifact
         uses: actions/download-artifact@v4
         with:
           name: trade-collector-package
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.build_run_id || github.event.inputs.build_run_id }}
           path: ./deploy-package
-
       # 2. Проверяем что загрузилось
       - name: Check downloaded package
         run: |
