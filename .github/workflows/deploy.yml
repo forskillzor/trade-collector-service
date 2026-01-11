@@ -224,7 +224,7 @@ jobs:
           
           # Сначала настроим sudo без пароля для текущего пользователя
           echo "Setting up passwordless sudo..."
-          echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/\$USER
+          echo "$SUDO_PASSWORD" | sudo -S bash -c 'echo "$USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$USER
           sudo chmod 440 /etc/sudoers.d/\$USER
           
           # Теперь все sudo команды будут работать без пароля

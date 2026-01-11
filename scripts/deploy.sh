@@ -20,15 +20,16 @@ echo "📦 Сборка native image..."
 
 # 2. Копирование на VPS
 echo "📤 Копирование на VPS..."
-scp -i $VPS_SSH_KEY -r \
+scp -i "$VPS_SSH_KEY" -r \
     build/native/nativeCompile/trade-collector \
     config/production.json \
     scripts/{start.sh,stop.sh,health-check.sh,restart.sh,update.sh} \
-    $VPS_USER@$VPS_HOST:/tmp/
+    # shellcheck disable=SC2086
+    "$VPS_USER"@$VPS_HOST:/tmp/
 
 # 3. Выполнение на VPS
 echo "⚙️  Настройка на VPS..."
-ssh -i $VPS_SSH_KEY $VPS_USER@$VPS_HOST << 'EOF'
+ssh -i "$VPS_SSH_KEY" "$VPS_USER"@"$VPS_HOST" << 'EOF'
 set -e
 
 APP_NAME="trade-collector"
