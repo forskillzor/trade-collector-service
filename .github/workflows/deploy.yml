@@ -1,51 +1,15 @@
-name: Deploy Collector Service
+name: Deploy Collector
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
-
-env:
-  APP_NAME: trade-collector
-  APP_USER: deploy
+    inputs:
+      artifact_version:
+        description: 'Версия артефакта (оставить пустым для последнего)'
+        required: false
+        type: string
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 🔧 Setup Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Build shadowJar
-        run: |
-          chmod +x gradlew
-          ./gradlew shadowJar
-
-      - name: Prepare package
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
-          DB_PORT: ${{ secrets.DB_PORT || '6432' }}
-          DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
-          DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
-        run: |
-          chmod +x scripts/prepare-package.sh
-          ./scripts/prepare-package.sh
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trade-collector-package
-          path: deploy-package/
-          retention-days: 1
-
   deploy:
-    needs: build
     runs-on: ubuntu-latest
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -58,10 +22,7 @@ jobs:
       DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download artifact
+      - name: Download latest artifact
         uses: actions/download-artifact@v4
         with:
           name: trade-collector-package
@@ -73,14 +34,6 @@ jobs:
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Check server (optional)
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          chmod +x scripts/check-server.sh
-          ./scripts/check-server.sh
 
       - name: Deploy to server
         run: |

@@ -1,0 +1,62 @@
+# .github/workflows/build.yml
+name: Build Collector
+
+on:
+  push:
+    tags:
+      - 'v*'  # например: v1.0.0, v1.2.3
+  workflow_dispatch:  # ручной запуск
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🔧 Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+              ~/.gradle/caches
+              ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build shadowJar
+        run: |
+          chmod +x gradlew
+          ./gradlew shadowJar --no-daemon
+
+      - name: Prepare package
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
+          DB_PORT: ${{ secrets.DB_PORT || '6432' }}
+          DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
+        run: |
+          chmod +x scripts/prepare-package.sh
+          ./scripts/prepare-package.sh
+
+      - name: Upload artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trade-collector-package
+          path: deploy-package/
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            deploy-package/trade-collector.jar
+            deploy-package/config.json
+          generate_release_notes: true
