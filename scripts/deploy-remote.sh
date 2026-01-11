@@ -5,6 +5,8 @@ APP_NAME='trade-collector'
 APP_USER='deploy'
 APP_DIR="/opt/$APP_NAME"
 
+export SUDO_ASKPASS="/bin/false"
+
 echo "=== DEPLOYMENT STARTED ==="
 echo "📊 Deployment variables:"
 echo "  DB_HOST: $DB_HOST"
