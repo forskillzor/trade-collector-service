@@ -33,6 +33,10 @@ jobs:
           JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
           cp "$JAR_FILE" deploy-package/trade-collector.jar
           
+          # Копируем service файл из scripts/
+          cp scripts/trade-collector.service deploy-package/
+          
+          # config.json и run.sh остаются как были
           cat > deploy-package/config.json << 'EOF'
           {
             "server": {
@@ -64,36 +68,14 @@ jobs:
           EOF
           chmod +x deploy-package/run.sh
           
-          cat > deploy-package/trade-collector.service << 'EOF'
-          [Unit]
-          Description=Trade Collector Service (JVM)
-          After=network.target
-          Wants=postgresql.service
-          
-          [Service]
-          Type=simple
-          User=trader
-          Group=trader
-          WorkingDirectory=/opt/trade-collector
-          ExecStart=/opt/trade-collector/run.sh
-          Restart=always
-          RestartSec=10
-          StandardOutput=append:/var/log/trade-collector/app.log
-          StandardError=append:/var/log/trade-collector/error.log
-          
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-          
           echo "📦 Package contents:"
           ls -la deploy-package/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trade-collector-package
-          path: deploy-package/
-          retention-days: 1
+          - name: Upload artifact
+            uses: actions/upload-artifact@v4
+            with:
+              name: trade-collector-package
+              path: deploy-package/
+              retention-days: 1
 
   deploy:
     needs: build
