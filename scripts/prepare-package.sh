@@ -16,10 +16,11 @@ fi
 echo "Using JAR file: $JAR_FILE"
 cp "$JAR_FILE" deploy-package/trade-collector.jar
 
-# Копируем скрипты
+# Копируем ВСЕ скрипты которые понадобятся на сервере
 echo "📄 Copying scripts..."
 cp scripts/trade-collector.service deploy-package/
 cp scripts/run.sh deploy-package/
+cp scripts/deploy-remote.sh deploy-package/  # ← добавляем этот файл
 
 # Создаем config.json
 echo "⚙️ Creating config.json..."

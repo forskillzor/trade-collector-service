@@ -22,8 +22,15 @@ ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 echo "📦 Copying files to server..."
 scp -i "$SSH_KEY_FILE" -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
 
+# Копируем deploy-remote.sh на сервер
+echo "📄 Copying deployment script..."
+scp -i "$SSH_KEY_FILE" scripts/deploy-remote.sh "$VPS_USER@$VPS_HOST:/tmp/"
+
 # Выполняем деплой
 echo "🔄 Executing deployment script on server..."
-ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" 'bash -s' < scripts/deploy-remote.sh
+ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
+  chmod +x /tmp/deploy-remote.sh
+  /tmp/deploy-remote.sh
+"
 
 echo "✅ Deployment completed!"
