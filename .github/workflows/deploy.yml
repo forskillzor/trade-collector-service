@@ -206,54 +206,88 @@ jobs:
           
           echo "✅ SSH setup complete"
           
-          
       - name: Deploy to server
         run: |
           echo "🚀 Deploying to $VPS_HOST..."
-          
+
           # 1. Копируем все файлы
           scp -i ~/.ssh/vps_key -r deploy-package/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
-          
+
           # 2. Деплой с подробной отладкой
           ssh -i ~/.ssh/vps_key "$VPS_USER@$VPS_HOST" "
             set -e
-          
+
             APP_NAME='trade-collector'
-            APP_USER='deploy'          # Один пользователь для всего!
+            APP_USER='deploy'
             APP_DIR='/opt/\$APP_NAME'
-          
+
+            echo '=== 0. ПРОВЕРЯЕМ JAVA ==='
+            echo 'Java версия:'
+            java -version 2>&1 || echo '❌ Java не установлена!'
+            echo 'Путь к java:'
+            which java || echo '❌ Java не найдена в PATH!'
+            echo ''
             echo '=== 1. DEBUG /tmp/deploy ==='
             ls -la /tmp/deploy/
-          
+            echo ''
+            echo '=== Проверяем шебанг run.sh ==='
+            head -1 /tmp/deploy/run.sh
+            echo ''
+            echo '=== Проверяем конец строк run.sh ==='
+            cat -A /tmp/deploy/run.sh || true
+            echo ''
+
             echo '=== 2. Создаем структуру ==='
             sudo mkdir -p \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
-          
+
             echo '=== 3. Копируем ВСЕ файлы ==='
             sudo cp -v /tmp/deploy/* \"\$APP_DIR/\" 2>&1 || { echo '❌ Копирование провалилось!'; exit 1; }
-          
+
             echo '=== 4. Исправляем права ==='
             sudo chown -R \"\$APP_USER:\$APP_USER\" \"\$APP_DIR\" \"/var/log/\$APP_NAME\"
             sudo chmod 755 \"\$APP_DIR/run.sh\"
             sudo chmod 644 \"\$APP_DIR\"/*.jar \"\$APP_DIR\"/*.json 2>/dev/null || true
-          
+
             echo '=== 5. Проверяем файлы ==='
             ls -la \"\$APP_DIR/\"
             sudo -u \$APP_USER test -x \"\$APP_DIR/run.sh\" && echo '✅ run.sh исполняемый' || echo '❌ run.sh проблема'
-          
+            echo ''
+            echo '=== Тестируем запуск от имени пользователя deploy ==='
+            sudo -u \$APP_USER sh -c \"cd \$APP_DIR && echo 'Рабочая директория:' && pwd && echo 'Проверяем Java:' && java -version 2>&1 || echo 'Java не найдена' && echo 'Запускаем скрипт:' && ./run.sh --help || true\"
+
             echo '=== 6. Устанавливаем сервис ==='
             sudo cp /tmp/deploy/trade-collector.service /etc/systemd/system/\$APP_NAME.service
             sudo sed -i 's/User=trader/User=deploy/' /etc/systemd/system/\$APP_NAME.service
             sudo sed -i 's/Group=trader/Group=deploy/' /etc/systemd/system/\$APP_NAME.service
-          
+
+            echo '=== 6a. Исправляем путь к Java в сервисе (вариант A) ==='
+            # Добавляем явный путь к Java в ExecStart
+            JAVA_PATH=\$(which java)
+            if [ -n \"\$JAVA_PATH\" ]; then
+              echo \"Java найдена по пути: \$JAVA_PATH\"
+              sudo sed -i \"s|ExecStart=/opt/trade-collector/run.sh|ExecStart=\$JAVA_PATH -jar /opt/trade-collector/trade-collector.jar --config /opt/trade-collector/config.json|\" /etc/systemd/system/\$APP_NAME.service
+            else
+              echo \"⚠️ Java не найдена! Устанавливаем...\"
+              sudo apt-get update
+              sudo apt-get install -y openjdk-21-jre-headless
+              JAVA_PATH=\$(which java)
+            fi
+
             sudo systemctl daemon-reload
             sudo systemctl enable \$APP_NAME.service
+
+            echo '=== 7. Запускаем сервис ==='
             sudo systemctl restart \$APP_NAME.service
-          
-            echo '=== 7. Финальная проверка ==='
+
+            echo '=== 8. Финальная проверка ==='
             sleep 3
             sudo systemctl status \$APP_NAME.service --no-pager -l
-            echo '=== Логи ==='
-            sudo journalctl -u \$APP_NAME.service -n 10 --no-pager
+            echo ''
+            echo '=== Логи сервиса (первые 30 строк) ==='
+            sudo journalctl -u \$APP_NAME.service -n 30 --no-pager
+            echo ''
+            echo '=== Проверяем процесс ==='
+            ps aux | grep java | grep -v grep || echo '❌ Java процесс не запущен'
           "
       - name: Verify deployment
         run: |
