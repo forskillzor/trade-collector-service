@@ -86,7 +86,12 @@ jobs:
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to $VPS_HOST..."
-          chmod +x scripts/deploy.sh
+          # Скрипты находятся в корне репозитория
+          ls -la scripts/ || echo "scripts/ not found"
+          ls -la ./
+          
+          # Запускаем деплой
+          chmod +x ./scripts/deploy.sh
           ./scripts/deploy.sh
 
       # 6. Проверка деплоя
