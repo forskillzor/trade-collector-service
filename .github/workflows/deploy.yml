@@ -30,7 +30,8 @@ jobs:
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
+          
+          
       - name: 📦 Download source code archive and send to server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,17 +40,25 @@ jobs:
           INPUT_TAG_VERSION="${{ github.event.inputs.tag_version }}"
           STRIPPED_TAG_VERSION=$(echo "$INPUT_TAG_VERSION" | xargs)
 
-          # URL к архиву с исходным кодом (tar.gz) - используем альтернативный URL
+          # URL к архиву с исходным кодом (tar.gz)
           ARCHIVE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/$STRIPPED_TAG_VERSION.tar.gz"
 
           echo "🔗 Downloading source archive from: $ARCHIVE_URL"
 
-          # Скачиваем архив
-          curl -sL \
-               -H "User-Agent: GitHub-Actions" \
-               -f \
+          # Скачиваем архив с аутентификацией через --user
+          if curl -sL \
+               --fail \
+               --user "x-access-token:$GITHUB_TOKEN" \
                -o /tmp/source_archive.tar.gz \
-               "$ARCHIVE_URL"
+               "$ARCHIVE_URL"; then
+            echo "✅ Archive downloaded successfully"
+          else
+            echo "❌ Failed to download archive"
+            # Покажем, что именно вернул сервер
+            curl -sL --user "x-access-token:$GITHUB_TOKEN" "$ARCHIVE_URL" | head -c 500
+            echo ""
+            exit 1
+          fi
 
           echo "📦 Archive downloaded. Sending to server..."
 
