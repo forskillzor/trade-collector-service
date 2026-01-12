@@ -76,5 +76,5 @@ jobs:
             export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
           
             echo '🚀 Starting deployment of \$RELEASE_TAG...'
-            /tmp/deploy-remote.sh
+            /tmp/release/deploy-remote.sh
           "
