@@ -49,18 +49,19 @@ jobs:
           scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
     
 
-      - name: 📦 Download source code as tar.gz and stream to server
-        run: |
-            echo "📦 Downloading source code for tag ${{ github.event.inputs.tag_version }}..."
-
-            # URL to the source code tarball by tag
-            SOURCE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.inputs.tag_version }}.tar.gz"
-
-            # Download and extract directly on the server
-            ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release && cd /tmp/release && curl -sL '$SOURCE_URL' | tar -xzf - --strip-components=1"
-            
-            echo "✅ Source code extracted on server at /tmp/release"
-
+          - name: 📦 Download source code tar.gz and stream to server
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              echo "📦 Downloading source code for tag ${{ github.event.inputs.tag_version }}..."
+              
+              # URL to the source code tarball by tag
+              SOURCE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.inputs.tag_version }}.tar.gz"
+              
+              # Download and extract directly on the server
+              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release && cd /tmp/release && curl -sL -H 'Authorization: Bearer $GITHUB_TOKEN' '$SOURCE_URL' | tar -xzf - --strip-components=1"
+              
+              echo "✅ Source code extracted on server at /tmp/release"
             # Сделаем скрипты исполняемыми
             chmod +x /tmp/release/deploy-remote.sh
             chmod +x /tmp/release/verify-deployment.sh
