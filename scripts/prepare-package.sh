@@ -6,6 +6,28 @@ echo "📦 Preparing deployment package..."
 # Создаем директорию
 mkdir -p deploy-package
 
+JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+
+if [ -z "$JAR_FILE" ]; then
+    echo "❌ ERROR: No JAR file found in build/libs/"
+    echo "Searching in build/libs/:"
+    ls -la build/libs/ 2>/dev/null || echo "build/libs/ directory doesn't exist"
+
+    # Ищи везде
+    echo "Searching everywhere..."
+    find . -name "*.jar" -type f | head -10
+
+    exit 1
+fi
+
+echo "Using JAR file: $JAR_FILE (size: $(stat -c%s "$JAR_FILE") bytes)"
+
+# Копируй JAR
+cp "$JAR_FILE" deploy-package/trade-collector.jar
+
+# Проверь что скопировался
+echo "Copied JAR size: $(stat -c%s deploy-package/trade-collector.jar) bytes"
+
 # Находим JAR файл
 JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
 if [ -z "$JAR_FILE" ]; then
