@@ -39,11 +39,18 @@ jobs:
           # Формируем URL, убрав возможные концевые пробелы из tag_version
           RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version | strip }}"
           
+          # Используем bash для удаления пробелов в начале и конце
+          INPUT_TAG_VERSION="${{ github.event.inputs.tag_version }}"
+          STRIPPED_TAG_VERSION=$(echo "$INPUT_TAG_VERSION" | xargs)  # xargs удаляет leading/trailing spaces
+
+          # Формируем URL
+          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/$STRIPPED_TAG_VERSION"
+
           # Выводим отладочную информацию
           echo "🔍 DEBUG: Repository = ${{ github.repository }}"
           echo "🏷️ DEBUG: Input Tag Version (raw) = '${{ github.event.inputs.tag_version }}'"
-          echo "🔗 DEBUG: Input Tag Version (stripped) = '${{ github.event.inputs.tag_version | strip }}'"
-          echo "🔗 DEBUG: Full RELEASE_URL base = '$RELEASE_URL'"
+          echo "🔗 DEBUG: Input Tag Version (stripped) = '$STRIPPED_TAG_VERSION'"
+          echo "🔗 DEBUG: Full RELEASE_URL base = '$RELEASE_URL'"          
           
           FILES=(
             "trade-collector.jar"
