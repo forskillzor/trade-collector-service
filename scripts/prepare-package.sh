@@ -4,62 +4,83 @@ set -e
 echo "📦 Preparing deployment package..."
 
 # Создаем директорию
+rm -rf deploy-package
 mkdir -p deploy-package
 
+# 1. Находим JAR файл
 JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
 
 if [ -z "$JAR_FILE" ]; then
     echo "❌ ERROR: No JAR file found in build/libs/"
     echo "Searching in build/libs/:"
     ls -la build/libs/ 2>/dev/null || echo "build/libs/ directory doesn't exist"
-
-    # Ищи везде
-    echo "Searching everywhere..."
-    find . -name "*.jar" -type f | head -10
-
     exit 1
 fi
 
 echo "Using JAR file: $JAR_FILE (size: $(stat -c%s "$JAR_FILE") bytes)"
 
-# Копируй JAR
+# 2. Копируем JAR
 cp "$JAR_FILE" deploy-package/trade-collector.jar
+echo "✅ JAR copied"
 
-# Проверь что скопировался
-echo "Copied JAR size: $(stat -c%s deploy-package/trade-collector.jar) bytes"
-
-# Находим JAR файл
-JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
-if [ -z "$JAR_FILE" ]; then
-    echo "❌ ERROR: No JAR file found in build/libs/"
-    exit 1
-fi
-
-echo "Using JAR file: $JAR_FILE"
-cp "$JAR_FILE" deploy-package/trade-collector.jar
-
-# Копируем скрипты
-echo "📄 Copying scripts..."
-cp scripts/trade-collector.service deploy-package/
-cp scripts/run.sh deploy-package/
-cp scripts/deploy-remote.sh deploy-package/
-cp scripts/init-database.sh deploy-package/
-
-# Копируем SQL схему
-if [ -f "scripts/001_init_schema.sql" ]; then
-    cp scripts/001_init_schema.sql deploy-package/
-    echo "✅ SQL schema copied"
-fi
-
-# Копируем config.json БЕЗ изменений
+# 3. Копируем конфиг
 echo "📄 Copying config.json..."
 if [ -f "config.json" ]; then
     cp config.json deploy-package/
-    echo "✅ config.json copied (original)"
+    echo "✅ config.json copied"
 else
     echo "❌ ERROR: config.json not found!"
     exit 1
 fi
 
+# 4. Копируем ОБЯЗАТЕЛЬНЫЕ скрипты для сервера
+echo "📄 Copying server scripts..."
+MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh")
+
+for script in "${MANDATORY_SCRIPTS[@]}"; do
+    if [ -f "scripts/$script" ]; then
+        cp "scripts/$script" deploy-package/
+        echo "✅ $script copied"
+    else
+        echo "❌ ERROR: Required script $script not found!"
+        exit 1
+    fi
+done
+
+# 5. Копируем ОПЦИОНАЛЬНЫЕ файлы
+echo "📄 Copying optional files..."
+
+# SQL схема (если есть)
+if [ -f "scripts/001_init_schema.sql" ]; then
+    cp "scripts/001_init_schema.sql" deploy-package/
+    echo "✅ SQL schema copied"
+fi
+
+# 6. Создаем файл README с инструкцией
+cat > deploy-package/README.md << 'EOF'
+# Trade Collector Deployment Package
+
+## Содержимое:
+- `trade-collector.jar` - основное приложение
+- `config.json` - конфигурация приложения
+- `trade-collector.service` - systemd unit file
+- `run.sh` - скрипт запуска
+- `init-database.sh` - инициализация БД
+
+## Для деплоя на сервер:
+1. Скопируйте все файлы в `/opt/trade-collector/`
+2. Установите права: `chmod +x /opt/trade-collector/*.sh`
+3. Скопируйте service файл: `sudo cp trade-collector.service /etc/systemd/system/`
+4. Настройте переменные окружения в `/etc/default/trade-collector`
+5. Запустите: `sudo systemctl start trade-collector`
+EOF
+
+echo "✅ README.md created"
+
+# 7. Итог
+echo ""
 echo "✅ Package prepared successfully!"
+echo "📁 Contents of deploy-package/:"
 ls -la deploy-package/
+echo ""
+echo "📦 Total size: $(du -sh deploy-package/ | cut -f1)"

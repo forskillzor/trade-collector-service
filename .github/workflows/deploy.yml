@@ -1,3 +1,4 @@
+# .github/workflows/deploy.yml
 name: Deploy Trade Collector
 
 on:
@@ -11,7 +12,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
@@ -24,33 +24,37 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Setup SSH
+      - name: 🔧 Setup SSH
         run: |
-          echo "🔧 Setting up SSH..."
           mkdir -p ~/.ssh
-          
-          # Сохраняем приватный ключ
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
-          
-          # Проверяем ключ
-          echo "🔑 Checking SSH key format..."
-          if ! ssh-keygen -l -f ~/.ssh/vps_key 2>/dev/null; then
-            echo "❌ ERROR: Invalid SSH private key format"
-            exit 1
-          fi
-          
-          # Добавляем хост в known_hosts
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          echo "✅ SSH ready"
 
-      - name: Deploy to server
+      - name: 📤 Copy deploy script to server
         run: |
-          echo "🚀 Deploying ${{ github.event.inputs.tag_version }} to $VPS_HOST"
+          # Копируем локальную версию deploy-remote.sh на сервер
+          scp -i ~/.ssh/vps_key scripts/deploy-remote.sh $VPS_USER@$VPS_HOST:/tmp/deploy-remote.sh
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "chmod +x /tmp/deploy-remote.sh"
+
+      - name: 🚀 Execute deployment on server
+        run: |
+          # Скачиваем deploy-remote.sh из релиза
+          DEPLOY_SCRIPT_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version }}/deploy-remote.sh"
           
-          # Запускаем deploy.sh с аргументом - версией релиза
-          chmod +x scripts/deploy.sh
-          ./scripts/deploy.sh "${{ github.event.inputs.tag_version }}"
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
+            # Скачиваем и запускаем скрипт деплоя из релиза
+            curl -sL '$DEPLOY_SCRIPT_URL' -o /tmp/deploy-remote.sh
+            chmod +x /tmp/deploy-remote.sh
+          
+            export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
+            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+            export DB_PORT='${{ secrets.DB_PORT || '6432' }}'
+            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
+          
+            echo '🚀 Starting deployment of \$RELEASE_TAG...'
+            /tmp/deploy-remote.sh
+          "
