@@ -31,24 +31,24 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           
-      - name: 📦 Download source code archive and send to server
-        uses: robinraju/release-downloader@v1.8
+      - name: 📦 Download + Send Source Code
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          repository: ${{ github.repository }}
-          tag: ${{ github.event.inputs.tag_version }}
-          fileName: "*TradeCollectorService*.tar.gz"
-          out-file-path: /tmp/
-          extract: false  # Не распаковывать здесь
-
-      - name: 📤 Send to VPS
         run: |
-          scp -i ~/.ssh/vps_key /tmp/*.tar.gz $VPS_USER@$VPS_HOST:/tmp/
-          echo "✅ Архив на сервере!"
-              
-              
-      
+          TAG="${{ github.event.inputs.tag_version }}"
+          ARCHIVE_NAME="TradeCollectorService-${TAG#v}.tar.gz"  # v0.0.1 → 0.0.1
+          
+          echo "📥 Скачиваем $ARCHIVE_NAME"
+          
+          curl -sL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$(curl -sL -H 'Authorization: token $GITHUB_TOKEN' 'https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG' | jq -r '.assets[] | select(.name == "Source code (tar.gz)") | .id')" \
+            -o "/tmp/source_archive.tar.gz"
+          
+          scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
+    
+    
       - name: 🚀 Execute deployment and verify on server
         run: |
           ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
