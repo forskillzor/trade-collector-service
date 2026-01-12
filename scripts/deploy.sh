@@ -1,13 +1,15 @@
 #!/bin/bash
 set -e
 
-# Проверяем обязательные переменные
-if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$VPS_SSH_KEY" ]; then
-    echo "❌ ERROR: Missing required environment variables"
+# Проверяем аргументы
+if [ $# -lt 1 ]; then
+    echo "❌ Usage: $0 <release_tag>"
+    echo "   Example: $0 v1.0.0"
     exit 1
 fi
 
-echo "🚀 Starting deployment to $VPS_HOST..."
+RELEASE_TAG="$1"
+echo "🚀 Starting deployment of $RELEASE_TAG to $VPS_HOST..."
 
 # Настройка SSH
 SSH_KEY_FILE="$HOME/.ssh/vps_key"
@@ -16,26 +18,7 @@ echo "$VPS_SSH_KEY" | tr -d '\r' > "$SSH_KEY_FILE"
 chmod 600 "$SSH_KEY_FILE"
 ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-# 1. Сначала очистим старый deploy на сервере
-echo "🧹 Cleaning old deployment on server..."
-ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "rm -rf /tmp/deploy"
-
-# 2. Копируем ВСЕ необходимые файлы
-echo "📦 Copying ALL deployment files to server..."
-
-# Создаем временную директорию со ВСЕМИ файлами
-mkdir -p /tmp/full-deploy
-cp -r deploy-package/* /tmp/full-deploy/
-cp scripts/deploy-remote.sh /tmp/full-deploy/
-cp scripts/init-database.sh /tmp/full-deploy/
-cp scripts/run.sh /tmp/full-deploy/
-cp scripts/trade-collector.service /tmp/full-deploy/
-
-# Копируем на сервер
-scp -i "$SSH_KEY_FILE" -r /tmp/full-deploy/* "$VPS_USER@$VPS_HOST:/tmp/deploy/"
-
-# 3. Выполняем деплой
-echo "🔄 Executing deployment script on server..."
+# Выполняем удаленный деплой
 ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
   # Экспортируем переменные
   export DB_PASSWORD='$DB_PASSWORD'
@@ -43,12 +26,14 @@ ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
   export DB_PORT='$DB_PORT'
   export DB_USER='$DB_USER'
   export DB_NAME='$DB_NAME'
+  export RELEASE_TAG='$RELEASE_TAG'
 
-  # Запускаем деплой
-  cd /tmp/deploy
-  ls -la  # Покажем что скопировалось
-  chmod +x deploy-remote.sh init-database.sh run.sh
-  ./deploy-remote.sh
+  echo '📦 Starting remote deployment...'
+  echo '📊 Version: '\$RELEASE_TAG
+  echo '🏠 Database: '\$DB_HOST:\$DB_PORT
+
+  # Скачиваем и запускаем скрипт деплоя
+  curl -sL https://raw.githubusercontent.com/forskillzor/TradeCollectorService/master/scripts/deploy-remote.sh | bash
 "
 
-echo "✅ Deployment completed!"
+echo "✅ Deployment of $RELEASE_TAG initiated!"
