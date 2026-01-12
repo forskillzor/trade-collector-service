@@ -31,82 +31,90 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: 📦 Download source code archive and extract scripts
+      - name: 📦 Download source code archive and send to server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Удаляем возможные пробелы в теге
           INPUT_TAG_VERSION="${{ github.event.inputs.tag_version }}"
           STRIPPED_TAG_VERSION=$(echo "$INPUT_TAG_VERSION" | xargs)
-          
-          # URL к архиву с исходным кодом (tar.gz)
-          ARCHIVE_URL="https://api.github.com/repos/${{ github.repository }}/tarball/$STRIPPED_TAG_VERSION"
-          
+
+          # URL к архиву с исходным кодом (tar.gz) - используем альтернативный URL
+          ARCHIVE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/$STRIPPED_TAG_VERSION.tar.gz"
+
           echo "🔗 Downloading source archive from: $ARCHIVE_URL"
-          
+
           # Скачиваем архив
           curl -sL \
-               -H "Authorization: token $GITHUB_TOKEN" \
+               -H "User-Agent: GitHub-Actions" \
+               -f \
                -o /tmp/source_archive.tar.gz \
                "$ARCHIVE_URL"
-          
-          # Создаём директорию для извлечения
-          mkdir -p /tmp/source_extracted
-          
-          # Извлекаем архив
-          tar -xzf /tmp/source_archive.tar.gz -C /tmp/source_extracted --strip-components=1
-          
-          # Находим и копируем нужные скрипты из подкаталога scripts
-          # Предположим, что структура такая: some-top-level-dir/scripts/
-          # Нужно найти путь к scripts внутри архива
-          SCRIPTS_DIR=$(find /tmp/source_extracted -type d -name "scripts" | head -n 1)
-          
-          if [ -z "$SCRIPTS_DIR" ]; then
-            echo "❌ Scripts directory not found in archive"
-            ls -la /tmp/source_extracted/
-            exit 1
-          fi
-          
-          echo "📁 Found scripts directory: $SCRIPTS_DIR"
-          
-          # Создаём директорию для подготовки к отправке на сервер
-          mkdir -p /tmp/release_runner
-          
-          # Копируем нужные скрипты в /tmp/release_runner
-          cp "$SCRIPTS_DIR/deploy-remote.sh" /tmp/release_runner/
-          cp "$SCRIPTS_DIR/verify-deployment.sh" /tmp/release_runner/ # Убедись, что verify-deployment.sh там
-          # Добавь другие файлы из scripts/, если нужно
-          
-          # Если в релизе есть другие ассеты (например, JAR-файл), скачай их отдельно
-          # Или, если JAR-файл тоже в архиве (например, в target/ или build/libs/ после сборки), можно его оттуда извлечь
-          
-          # Пример: если trade-collector.jar в корне архива или в подкаталоге
-          JAR_FILE=$(find /tmp/source_extracted -name "trade-collector.jar" -type f | head -n 1)
-          if [ -n "$JAR_FILE" ]; then
-              echo "📦 Found JAR file: $JAR_FILE"
-              cp "$JAR_FILE" /tmp/release_runner/
-          else
-              echo "⚠️ JAR file not found in source archive. Downloading separately..."
-              # Если JAR не в архиве, скачиваем как asset
-              # Этот блок можно использовать, если JAR не включён в исходный код
-              # Но если он есть в assets, можно использовать action для его скачивания:
-              # - name: Download JAR
-              #   uses: rwanzaigler/actions-download-release-asset@v1
-              #   with:
-              #     repo: ${{ github.repository }}
-              #     tag: ${{ github.event.inputs.tag_version }}
-              #     asset: trade-collector.jar
-              #     path: /tmp/release_runner/
-          fi
-          
-          # Проверим, что файлы действительно есть
-          echo "📁 Contents of /tmp/release_runner/:"
-          ls -la /tmp/release_runner/
 
-      - name: 📤 Copy release files to server
+          echo "📦 Archive downloaded. Sending to server..."
+
+          # Копируем архив на сервер
+          scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
+
+          echo "✅ Archive sent to server."
+
+      - name: 🚀 Execute deployment and verify on server
         run: |
-          # Копируем всё содержимое на сервер
-          echo "📤 Copying files from runner to server..."
-          scp -i ~/.ssh/vps_key -r /tmp/release_runner/* $VPS_USER@$VPS_HOST:/tmp/release/
-          
-          echo "✅ All files copied to server."
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
+            cd /tmp
+
+            # Создаём директорию для распаковки
+            mkdir -p /tmp/release_extracted
+
+            # Распаковываем архив
+            tar -xzf /tmp/source_archive.tar.gz -C /tmp/release_extracted --strip-components=1
+
+            # Проверим, что папка scripts есть
+            if [ ! -d '/tmp/release_extracted/scripts' ]; then
+              echo '❌ Scripts directory not found in archive'
+              ls -la /tmp/release_extracted/
+              exit 1
+            fi
+
+            # Копируем нужные скрипты в /tmp/release
+            mkdir -p /tmp/release
+            cp /tmp/release_extracted/scripts/deploy-remote.sh /tmp/release/
+            cp /tmp/release_extracted/scripts/verify-deployment.sh /tmp/release/
+
+            # Копируем JAR файл, если он есть (например, в корне или в подкаталоге)
+            JAR_FILE=\$(find /tmp/release_extracted -name 'trade-collector.jar' -type f | head -n 1)
+            if [ -n \"\$JAR_FILE\" ]; then
+              echo \"📦 Found JAR file: \$JAR_FILE\"
+              cp \"\$JAR_FILE\" /tmp/release/
+            else
+              echo \"⚠️ JAR file not found in archive\"
+              exit 1
+            fi
+
+            # Копируем другие файлы из архива (config, service, и т.д.)
+            # Пример: если config.json, run.sh и т.д. тоже в архиве
+            # find /tmp/release_extracted -name 'config.json' -exec cp {} /tmp/release/ \;
+            # find /tmp/release_extracted -name 'run.sh' -exec cp {} /tmp/release/ \;
+            # и т.д.
+
+            # Сделаем скрипты исполняемыми
+            chmod +x /tmp/release/deploy-remote.sh
+            chmod +x /tmp/release/verify-deployment.sh
+
+            # Установим переменные окружения
+            export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
+            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
+            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
+            export VPS_HOST='$VPS_HOST'
+
+            echo '🚀 Starting deployment of \$RELEASE_TAG...'
+            /tmp/release/deploy-remote.sh
+
+            echo '🔍 Starting verification...'
+            /tmp/release/verify-deployment.sh
+          "
+
+          echo "✅ Deployment and verification completed successfully."
