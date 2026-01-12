@@ -65,7 +65,7 @@ jobs:
             fi
           done
       
-      echo "📦 All files processed."      
+          echo "📦 All files processed."      
           echo "📦 All files uploaded to server."
 
       - name: 🚀 Execute deployment on server
