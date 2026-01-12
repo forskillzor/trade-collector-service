@@ -49,17 +49,22 @@ jobs:
             "001_init_schema.sql"
           )
           
-          # Сохраняем все URL в файл на сервере
-          URL_LIST_FILE="/tmp/release_urls.txt"
-          for file in "${FILES[@]}"; do
-          FULL_URL="$RELEASE_URL/$file"
-          echo "$FULL_URL" >> "$URL_LIST_FILE"
-          done
+          # Формируем команды curl и сохраняем в файл
+          CURL_COMMANDS_FILE="/tmp/curl_commands.sh"
+          {
+            echo "#!/bin/bash"
+            echo "# Curl commands to download release assets"
+            echo "# Generated at $(date)"
+            echo ""
+            for file in "${FILES[@]}"; do
+              FULL_URL="$RELEASE_URL/$file"
+            echo "curl -H 'Authorization: token $GITHUB_TOKEN' -L -v '$FULL_URL' -o '$file'"
+              echo ""
+              done
+          } > "$CURL_COMMANDS_FILE"
 
-          # Копируем этот файл на сервер
-          echo "$GITHUB_TOKEN" | ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/github_token.txt"
-          scp -i ~/.ssh/vps_key "$URL_LIST_FILE" $VPS_USER@$VPS_HOST:/tmp/
-          
+          # Копируем файл на сервер
+          scp -i ~/.ssh/vps_key "$CURL_COMMANDS_FILE" $VPS_USER@$VPS_HOST:/tmp/          
           ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release"
           
           for file in "${FILES[@]}"; do
