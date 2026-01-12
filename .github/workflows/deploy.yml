@@ -31,11 +31,13 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: 📤 Stream release files directly to server without storing token there
+      - name: 📤 Stream release files directly to server (with error check)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version }}"
+          # Выводим URL для отладки
+          echo "🔍 DEBUG: Generated RELEASE_URL = $RELEASE_URL"
           
           FILES=(
             "trade-collector.jar"
@@ -51,12 +53,19 @@ jobs:
           
           for file in "${FILES[@]}"; do
             echo "Uploading $file to server..."
-            curl -sL -H "Authorization: token $GITHUB_TOKEN" \
+            if curl -sL -f -H "Authorization: token $GITHUB_TOKEN" \
                  "$RELEASE_URL/$file" | \
-              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/release/$file" || \
-              echo "⚠️ Could not upload $file"
+              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/release/$file"; then
+                echo "✅ Uploaded $file"
+            else
+                echo "❌ Failed to upload $file"
+                # Попробуем скачать и вывести ошибку локально для отладки
+                echo "🔍 Debug info for $file:"
+                curl -v -H "Authorization: token $GITHUB_TOKEN" "$RELEASE_URL/$file" | head -n 20
+            fi
           done
-          
+      
+      echo "📦 All files processed."      
           echo "📦 All files uploaded to server."
 
       - name: 🚀 Execute deployment on server
