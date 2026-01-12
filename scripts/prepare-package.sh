@@ -35,7 +35,7 @@ fi
 
 # 4. Копируем ОБЯЗАТЕЛЬНЫЕ скрипты для сервера
 echo "📄 Copying server scripts..."
-MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh")
+MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "verify-deployment.sh")
 
 for script in "${MANDATORY_SCRIPTS[@]}"; do
     if [ -f "scripts/$script" ]; then

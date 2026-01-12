@@ -31,13 +31,18 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: 📤 Stream release files directly to server (with error check)
+      - name: 📥 Download release files to runner, then copy to server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version }}"
-          # Выводим URL для отладки
-          echo "🔍 DEBUG: Generated RELEASE_URL = $RELEASE_URL"
+          # Формируем URL, убрав возможные концевые пробелы из tag_version
+          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version | strip }}"
+          
+          # Выводим отладочную информацию
+          echo "🔍 DEBUG: Repository = ${{ github.repository }}"
+          echo "🏷️ DEBUG: Input Tag Version (raw) = '${{ github.event.inputs.tag_version }}'"
+          echo "🔗 DEBUG: Input Tag Version (stripped) = '${{ github.event.inputs.tag_version | strip }}'"
+          echo "🔗 DEBUG: Full RELEASE_URL base = '$RELEASE_URL'"
           
           FILES=(
             "trade-collector.jar"
@@ -49,40 +54,35 @@ jobs:
             "001_init_schema.sql"
           )
           
-          # Формируем команды curl и сохраняем в файл
-          CURL_COMMANDS_FILE="/tmp/curl_commands.sh"
-          {
-            echo "#!/bin/bash"
-            echo "# Curl commands to download release assets"
-            echo "# Generated at $(date)"
-            echo ""
-            for file in "${FILES[@]}"; do
-              FULL_URL="$RELEASE_URL/$file"
-            echo "curl -H 'Authorization: token $GITHUB_TOKEN' -L -v '$FULL_URL' -o '$file'"
-              echo ""
-              done
-          } > "$CURL_COMMANDS_FILE"
-
-          # Копируем файл на сервер
-          scp -i ~/.ssh/vps_key "$CURL_COMMANDS_FILE" $VPS_USER@$VPS_HOST:/tmp/          
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release"
+          # Создаём локальную директорию на runner
+          mkdir -p /tmp/release_runner
           
+          # Скачиваем каждый файл
           for file in "${FILES[@]}"; do
-            echo "Uploading $file to server..."
+            echo "📥 Downloading $file to runner..."
             if curl -sL -f -H "Authorization: token $GITHUB_TOKEN" \
-                 "$RELEASE_URL/$file" | \
-              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/release/$file"; then
-                echo "✅ Uploaded $file"
+                 -o "/tmp/release_runner/$file" \
+                 "$RELEASE_URL/$file"; then
+              echo "✅ Downloaded $file locally on runner"
             else
-                echo "❌ Failed to upload $file"
-                # Попробуем скачать и вывести ошибку локально для отладки
-                echo "🔍 Debug info for $file:"
-                curl -v -H "Authorization: token $GITHUB_TOKEN" "$RELEASE_URL/$file" | head -n 20
+              echo "❌ Failed to download $file locally on runner"
+              # Покажем, что именно вернул GitHub в случае ошибки
+              echo "🔍 Debug response for $file:"
+              curl -sL -H "Authorization: token $GITHUB_TOKEN" "$RELEASE_URL/$file" | head -c 500
+              echo ""
+              exit 1  # Останавливаем выполнение, если один из файлов не скачался
             fi
           done
-      
-          echo "📦 All files processed."      
-          echo "📦 All files uploaded to server."
+          
+          # Проверим, что файлы действительно есть
+          echo "📁 Contents of /tmp/release_runner/:"
+          ls -la /tmp/release_runner/
+          
+          # Копируем всё содержимое локальной директории на сервер
+          echo "📤 Copying files from runner to server..."
+          scp -i ~/.ssh/vps_key -r /tmp/release_runner/* $VPS_USER@$VPS_HOST:/tmp/release/
+          
+          echo "✅ All files copied to server."
 
       - name: 🚀 Execute deployment on server
         run: |
@@ -103,3 +103,26 @@ jobs:
             echo '🚀 Starting deployment of \$RELEASE_TAG...'
             /tmp/release/deploy-remote.sh
           "
+      - name: 🚀 Execute deployment and verify on server
+        run: |
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
+            cd /tmp/release
+            chmod +x /tmp/release/deploy-remote.sh
+            chmod +x /tmp/release/verify-deployment.sh  # Добавляем chmod для скрипта проверки
+
+            export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
+            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
+            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
+            export VPS_HOST='$VPS_HOST'  # Передаём хост в скрипт
+
+            echo '🚀 Starting deployment of \$RELEASE_TAG...'
+            /tmp/release/deploy-remote.sh
+
+            echo '🔍 Starting verification...'
+            /tmp/release/verify-deployment.sh
+          "
+
+          echo "✅ Deployment and verification completed successfully."

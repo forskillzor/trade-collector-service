@@ -1,56 +1,72 @@
 #!/bin/bash
 set -e
 
-cd /opt/trade-collector
-
-echo "🚀 Starting Trade Collector Service..."
-
-# Пробуем получить переменные разными способами:
-# 1. Из аргументов командной строки
-# 2. Из переменных окружения
-# 3. Из файла /etc/default/trade-collector
-
-# Если переменные не установлены, пробуем загрузить из файла
-if [ -z "$DB_PASSWORD" ] && [ -f /etc/default/trade-collector ]; then
-    echo "📋 Loading environment from /etc/default/trade-collector"
-    # Используем grep чтобы безопасно извлечь переменные
-    while IFS='=' read -r key value; do
-        # Удаляем кавычки и пробелы
-        key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-        value=$(echo "$value" | sed "s/^['\"]//;s/['\"]$//;s/^[[:space:]]*//;s/[[:space:]]*$//")
-
-        # Экспортируем только если ключ не пустой и не комментарий
-        if [[ ! -z "$key" && ! "$key" =~ ^# ]]; then
-            export "$key=$value"
-        fi
-    done < <(grep -v '^#' /etc/default/trade-collector | grep '=')
-fi
-
-# Проверка переменных окружения
-echo "📊 Environment variables:"
-echo "  DB_HOST: ${DB_HOST:-not set}"
-echo "  DB_PORT: ${DB_PORT:-not set}"
-echo "  DB_NAME: ${DB_NAME:-not set}"
-echo "  DB_USER: ${DB_USER:-not set}"
-echo "  DB_PASSWORD: ${DB_PASSWORD:+******}"
-
-if [ -z "$DB_PASSWORD" ]; then
-    echo "❌ ERROR: DB_PASSWORD is not set!"
-    echo "Sources checked:"
-    echo "1. Environment variables: $(env | grep DB_)"
-    echo "2. File /etc/default/trade-collector: $(sudo cat /etc/default/trade-collector 2>/dev/null | head -2)"
+if [ -z "$VPS_HOST" ]; then
+    echo "❌ ERROR: VPS_HOST is not set"
     exit 1
 fi
 
-echo "✅ Database configured"
+echo "🔍 Verifying deployment on $VPS_HOST..."
 
-# JVM параметры
-JVM_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-JVM_OPTS="$JVM_OPTS -XX:+UseG1GC"
-JVM_OPTS="$JVM_OPTS -Xmx512m"
-JVM_OPTS="$JVM_OPTS -Xms256m"
+# Проверяем, что сервис запущен
+echo "🔍 Checking if trade-collector service is active..."
+SERVICE_STATUS=$(systemctl is-active trade-collector 2>/dev/null || echo "unknown")
 
-echo ""
+if [ "$SERVICE_STATUS" = "active" ]; then
+    echo "✅ Service is running"
+else
+    echo "❌ Service is NOT running (status: $SERVICE_STATUS)"
+    echo "📝 Last 20 lines of service logs:"
+    journalctl -u trade-collector -n 20 --no-pager
+    exit 1
+fi
 
-# Запуск приложения
-exec java $JVM_OPTS -jar trade-collector.jar --config "config.json"
+# Проверяем, были ли ошибки в логах за последние 5 минут
+echo "🔍 Checking recent logs for errors..."
+ERROR_COUNT=$(journalctl -u trade-collector --since "5 minutes ago" --priority err --quiet | wc -l)
+
+if [ "$ERROR_COUNT" -gt 0 ]; then
+    echo "⚠️  Found $ERROR_COUNT error(s) in logs in last 5 minutes"
+    echo "📝 Last 10 lines of error logs:"
+    journalctl -u trade-collector --since "5 minutes ago" -n 10 --priority err --no-pager
+else
+    echo "✅ No recent errors found in logs"
+fi
+
+# Проверяем доступные endpoints
+ENDPOINTS=("/health" "/actuator/health" "/" "/api/health" "/ping")
+MAX_RETRIES=10
+RETRY_DELAY=10
+
+for attempt in $(seq 1 $MAX_RETRIES); do
+    echo "Attempt $attempt/$MAX_RETRIES..."
+
+    # Проверяем порт
+    if nc -z -w 5 "$VPS_HOST" 8080 2>/dev/null; then
+        echo "✅ Port 8080 is open"
+
+        # Проверяем каждый endpoint
+        for endpoint in "${ENDPOINTS[@]}"; do
+            echo "  Trying $endpoint..."
+            RESPONSE=$(curl -s -f --max-time 10 "http://$VPS_HOST:8080$endpoint" 2>/dev/null || true)
+
+            if [ -n "$RESPONSE" ]; then
+                echo "✅ Service is responding on $endpoint"
+                echo "Response preview: $(echo "$RESPONSE" | head -c 200)..."
+                exit 0
+            fi
+        done
+    else
+        echo "❌ Port 8080 is not open"
+    fi
+
+    if [ $attempt -lt $MAX_RETRIES ]; then
+        echo "Waiting $RETRY_DELAY seconds..."
+        sleep $RETRY_DELAY
+    fi
+done
+
+echo "❌ Service verification failed"
+echo "📝 Final log status:"
+journalctl -u trade-collector -n 20 --no-pager
+exit 1
