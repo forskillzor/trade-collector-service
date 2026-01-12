@@ -84,45 +84,98 @@ jobs:
           
           echo "✅ All files copied to server."
 
-      - name: 🚀 Execute deployment on server
+      - name: 📥 Download release files to runner, then copy to server
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
-            # Скрипт УЖЕ скопирован через scp на предыдущем шаге
-            # Просто запускаем его
+          # Формируем URL, убрав возможные концевые пробелы из tag_version
+          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version | strip }}"
           
-            cd /tmp/release
-            chmod +x /tmp/release/deploy-remote.sh
+          # Выводим отладочную информацию
+          echo "🔍 DEBUG: Repository = ${{ github.repository }}"
+          echo "🏷️ DEBUG: Input Tag Version (raw) = '${{ github.event.inputs.tag_version }}'"
+          echo "🔗 DEBUG: Input Tag Version (stripped) = '${{ github.event.inputs.tag_version | strip }}'"
+          echo "🔗 DEBUG: Full RELEASE_URL base = '$RELEASE_URL'"
           
-            export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
-            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
-            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
-            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
+          FILES=(
+            "trade-collector.jar"
+            "config.json"
+            "deploy-remote.sh"
+            "trade-collector.service"
+            "run.sh"
+            "init-database.sh"
+            "001_init_schema.sql"
+          )
           
-            echo '🚀 Starting deployment of \$RELEASE_TAG...'
-            /tmp/release/deploy-remote.sh
-          "
-      - name: 🚀 Execute deployment and verify on server
+          # Создаём локальную директорию на runner
+          mkdir -p /tmp/release_runner
+          
+          # Скачиваем каждый файл
+          for file in "${FILES[@]}"; do
+            echo "📥 Downloading $file to runner..."
+            if curl -sL -f -H "Authorization: token $GITHUB_TOKEN" \
+                 -o "/tmp/release_runner/$file" \
+                 "$RELEASE_URL/$file"; then
+              echo "✅ Downloaded $file locally on runner"
+            else
+              echo "❌ Failed to download $file locally on runner"
+              # Покажем, что именно вернул GitHub в случае ошибки
+              echo "🔍 Debug response for $file:"
+              curl -sL -H "Authorization: token $GITHUB_TOKEN" "$RELEASE_URL/$file" | head -c 500
+              echo ""
+              exit 1  # Останавливаем выполнение, если один из файлов не скачался
+            fi
+          done
+          
+          # Проверим, что файлы действительно есть
+          echo "📁 Contents of /tmp/release_runner/:"
+          ls -la /tmp/release_runner/
+          
+          # Копируем всё содержимое локальной директории на сервер
+          echo "📤 Copying files from runner to server..."
+          scp -i ~/.ssh/vps_key -r /tmp/release_runner/* $VPS_USER@$VPS_HOST:/tmp/release/
+          
+          echo "✅ All files copied to server."
+          
+      - name: ✅ Verify deployment
         run: |
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
-            cd /tmp/release
-            chmod +x /tmp/release/deploy-remote.sh
-            chmod +x /tmp/release/verify-deployment.sh  # Добавляем chmod для скрипта проверки
+          echo "⏳ Waiting for service to start..."
+          sleep 10  # Ждём 10 секунд, чтобы сервис успел запуститься
 
-            export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
-            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
-            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
-            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
-            export VPS_HOST='$VPS_HOST'  # Передаём хост в скрипт
+          echo "🔍 Checking if trade-collector service is active..."
+          if ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "systemctl is-active --quiet trade-collector"; then
+              echo "✅ Service is running"
+          else
+              echo "❌ Service is NOT running"
+              # Показываем последние логи
+              echo "📝 Last 20 lines of service logs:"
+              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "journalctl -u trade-collector -n 20 --no-pager"
+              exit 1
+          fi
 
-            echo '🚀 Starting deployment of \$RELEASE_TAG...'
-            /tmp/release/deploy-remote.sh
+          # Если у сервиса есть API эндпоинт, проверим его
+          # Замени URL на актуальный, если нужно
+          API_ENDPOINT="${{ vars.API_BASE_URL || 'http://localhost:8080' }}/health"  # или другой health-check эндпоинт
+          echo "🌐 Testing API endpoint: $API_ENDPOINT"
 
-            echo '🔍 Starting verification...'
-            /tmp/release/verify-deployment.sh
-          "
+          # Ждём, пока API начнёт отвечать
+          for i in {1..30}; do  # Повторяем 30 раз (до 5 минут, если ждём по 10 сек)
+              if ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "curl -sf $API_ENDPOINT" > /dev/null 2>&1; then
+                  echo "✅ API is responding"
+                  break
+              else
+                  echo "⏳ Waiting for API to respond... ($i/30)"
+                  sleep 10
+              fi
+          done
 
-          echo "✅ Deployment and verification completed successfully."
+          # Проверим, достигли ли мы таймаута
+          if ! ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "curl -sf $API_ENDPOINT" > /dev/null 2>&1; then
+              echo "❌ API did not become responsive within timeout"
+              echo "📝 Last 20 lines of service logs:"
+              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "journalctl -u trade-collector -n 20 --no-pager"
+              exit 1
+          fi
+
+          # Проверим, что в логах нет ошибок
+          echo "🔍 Checking logs for errors
