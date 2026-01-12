@@ -31,45 +31,24 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           
-          
       - name: 📦 Download source code archive and send to server
+        uses: robinraju/release-downloader@v1.8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STRIPPED_TAG_VERSION=$(echo "${{ github.event.inputs.tag_version }}" | xargs)
-          
-          echo "🔍 Получаем release info для $STRIPPED_TAG_VERSION"
-          
-          RELEASE_INFO=$(curl -sL -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$STRIPPED_TAG_VERSION")
-          
-          # Показываем все assets для отладки
-          echo "📋 Assets в релизе:"
-          echo "$RELEASE_INFO" | jq -r '.assets[] | "\(.name) (\(.size) bytes)"'
-          
-          # Ищем Source code tar.gz
-          SOURCE_ARCHIVE_URL=$(echo "$RELEASE_INFO" | jq -r '.assets[] | select(.name | contains("Source code") and contains("tar.gz")) | .url // empty')
-          
-          if [ -z "$SOURCE_ARCHIVE_URL" ]; then
-            echo "❌ Source code (tar.gz) НЕ НАЙДЕН!"
-            echo "Создайте Release с Source code asset:"
-            echo "1. git tag -a v0.0.1 -m 'Release'"
-            echo "2. git push origin v0.0.1"
-            echo "3. Releases → Draft new release → Publish"
-            exit 1
-          fi
-          
-          echo "🔗 Скачиваем Source code: $SOURCE_ARCHIVE_URL"
-          
-          curl -sL \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            "$SOURCE_ARCHIVE_URL" -o /tmp/source_archive.tar.gz
-          
-          echo "📦 Архив готов. Отправляем на сервер..."
-          scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
-          echo "✅ ✅ ✅ Архив на сервере!"
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ github.event.inputs.tag_version }}
+          fileName: "*TradeCollectorService*.tar.gz"
+          out-file-path: /tmp/
+          extract: false  # Не распаковывать здесь
 
+      - name: 📤 Send to VPS
+        run: |
+          scp -i ~/.ssh/vps_key /tmp/*.tar.gz $VPS_USER@$VPS_HOST:/tmp/
+          echo "✅ Архив на сервере!"
+              
+              
+      
       - name: 🚀 Execute deployment and verify on server
         run: |
           ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
