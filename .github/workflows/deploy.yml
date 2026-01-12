@@ -1,4 +1,3 @@
-# .github/workflows/deploy.yml
 name: Deploy Trade Collector
 
 on:
@@ -32,26 +31,47 @@ jobs:
           chmod 600 ~/.ssh/vps_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: 📤 Copy deploy script to server
+      - name: 📤 Stream release files directly to server without storing token there
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Копируем локальную версию deploy-remote.sh на сервер
-          scp -i ~/.ssh/vps_key scripts/deploy-remote.sh $VPS_USER@$VPS_HOST:/tmp/deploy-remote.sh
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "chmod +x /tmp/deploy-remote.sh"
+          RELEASE_URL="https://api.github.com/repos/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version }}"
+          
+          FILES=(
+            "trade-collector.jar"
+            "config.json"
+            "deploy-remote.sh"
+            "trade-collector.service"
+            "run.sh"
+            "init-database.sh"
+            "001_init_schema.sql"
+          )
+          
+          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release"
+          
+          for file in "${FILES[@]}"; do
+            echo "Uploading $file to server..."
+            curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" \
+                 "$RELEASE_URL/$file" | \
+              ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/release/$file" || \
+              echo "⚠️ Could not upload $file"
+          done
+          
+          echo "📦 All files uploaded to server."
 
       - name: 🚀 Execute deployment on server
         run: |
-          # Скачиваем deploy-remote.sh из релиза
-          DEPLOY_SCRIPT_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag_version }}/deploy-remote.sh"
-          
           ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
-            # Скачиваем и запускаем скрипт деплоя из релиза
-            curl -sL '$DEPLOY_SCRIPT_URL' -o /tmp/deploy-remote.sh
-            chmod +x /tmp/deploy-remote.sh
+            # Скрипт УЖЕ скопирован через scp на предыдущем шаге
+            # Просто запускаем его
+          
+            cd /tmp/release
+            chmod +x /tmp/release/deploy-remote.sh
           
             export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
             export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
             export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-            export DB_PORT='${{ secrets.DB_PORT || '6432' }}'
+            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
             export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
             export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
           
