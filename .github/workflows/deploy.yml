@@ -79,4 +79,4 @@ jobs:
 
             echo '🔍 Starting verification...'
             /tmp/release/verify-deployment.sh
-          "
+            "
