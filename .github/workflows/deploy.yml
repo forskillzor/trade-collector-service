@@ -51,7 +51,7 @@ jobs:
           
           for file in "${FILES[@]}"; do
             echo "Uploading $file to server..."
-            curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            curl -sL -H "Authorization: token $GITHUB_TOKEN" \
                  "$RELEASE_URL/$file" | \
               ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "cat > /tmp/release/$file" || \
               echo "⚠️ Could not upload $file"
