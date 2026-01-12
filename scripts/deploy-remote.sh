@@ -43,9 +43,9 @@ echo "" | $SUDO_CMD mkdir -p "$APP_DIR" "/var/log/$APP_NAME" 2>/dev/null
 echo "📄 Copying files..."
 echo "" | $SUDO_CMD cp -rv /tmp/deploy/* "$APP_DIR/" 2>/dev/null
 
-# 4. Создаем environment файл для systemd
+# 4. Создаем environment файл для systemd с правильными правами
 echo "🔒 Creating systemd environment file..."
-cat << EOF | $SUDO_CMD tee /etc/default/trade-collector > /dev/null
+cat << EOF | sudo tee /etc/default/trade-collector > /dev/null
 # Database configuration
 DB_PASSWORD='$DB_PASSWORD'
 DB_HOST='$DB_HOST'
@@ -57,11 +57,26 @@ DB_NAME='$DB_NAME'
 JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 EOF
 
-echo "" | $SUDO_CMD chmod 600 /etc/default/trade-collector 2>/dev/null
-echo "✅ Environment file created: /etc/default/trade-collector"
+# Устанавливаем права: root владелец, группа deploy, читать могут root и члены группы deploy
+sudo chown root:deploy /etc/default/trade-collector
+sudo chmod 640 /etc/default/trade-collector
+echo "✅ Environment file created with proper permissions: /etc/default/trade-collector"
 
 # 5. Устанавливаем права
 echo "🔐 Setting permissions..."
+# Устанавливаем владельца для всех файлов
+sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
+
+# Даем право читать логи директории
+sudo chmod 755 "$APP_DIR" "/var/log/$APP_NAME"
+
+# Исполняемые скрипты
+sudo chmod 755 "$APP_DIR/run.sh" "$APP_DIR/deploy-remote.sh" "$APP_DIR/init-database.sh"
+
+# JAR и конфиги только на чтение
+sudo chmod 644 "$APP_DIR/trade-collector.jar" "$APP_DIR/config.json" "$APP_DIR/trade-collector.service"
+
+echo "✅ Permissions set correctly"
 echo "" | $SUDO_CMD chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME" 2>/dev/null
 echo "" | $SUDO_CMD chmod 755 "$APP_DIR/run.sh" 2>/dev/null
 echo "" | $SUDO_CMD chmod 644 "$APP_DIR/trade-collector.jar" "$APP_DIR/config.json" 2>/dev/null
