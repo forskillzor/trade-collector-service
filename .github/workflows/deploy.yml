@@ -48,45 +48,18 @@ jobs:
           
           scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
     
-    
-      - name: 🚀 Execute deployment and verify on server
+
+      - name: 📦 Download source code as tar.gz and stream to server
         run: |
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "
-            cd /tmp
+            echo "📦 Downloading source code for tag ${{ github.event.inputs.tag_version }}..."
 
-            # Создаём директорию для распаковки
-            mkdir -p /tmp/release_extracted
+            # URL to the source code tarball by tag
+            SOURCE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.inputs.tag_version }}.tar.gz"
 
-            # Распаковываем архив
-            tar -xzf /tmp/source_archive.tar.gz -C /tmp/release_extracted --strip-components=1
-
-            # Проверим, что папка scripts есть
-            if [ ! -d '/tmp/release_extracted/scripts' ]; then
-              echo '❌ Scripts directory not found in archive'
-              ls -la /tmp/release_extracted/
-              exit 1
-            fi
-
-            # Копируем нужные скрипты в /tmp/release
-            mkdir -p /tmp/release
-            cp /tmp/release_extracted/scripts/deploy-remote.sh /tmp/release/
-            cp /tmp/release_extracted/scripts/verify-deployment.sh /tmp/release/
-
-            # Копируем JAR файл, если он есть (например, в корне или в подкаталоге)
-            JAR_FILE=\$(find /tmp/release_extracted -name 'trade-collector.jar' -type f | head -n 1)
-            if [ -n \"\$JAR_FILE\" ]; then
-              echo \"📦 Found JAR file: \$JAR_FILE\"
-              cp \"\$JAR_FILE\" /tmp/release/
-            else
-              echo \"⚠️ JAR file not found in archive\"
-              exit 1
-            fi
-
-            # Копируем другие файлы из архива (config, service, и т.д.)
-            # Пример: если config.json, run.sh и т.д. тоже в архиве
-            # find /tmp/release_extracted -name 'config.json' -exec cp {} /tmp/release/ \;
-            # find /tmp/release_extracted -name 'run.sh' -exec cp {} /tmp/release/ \;
-            # и т.д.
+            # Download and extract directly on the server
+            ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release && cd /tmp/release && curl -sL '$SOURCE_URL' | tar -xzf - --strip-components=1"
+            
+            echo "✅ Source code extracted on server at /tmp/release"
 
             # Сделаем скрипты исполняемыми
             chmod +x /tmp/release/deploy-remote.sh
