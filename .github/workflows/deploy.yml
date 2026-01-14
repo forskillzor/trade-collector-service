@@ -74,8 +74,8 @@ jobs:
           set -e
           echo "📦 Starting deployment..."
           
-          TAG='${{ github.event.inputs.tag_version }}'
-          ARCHIVE='trade-collector-${TAG}.tar.gz'
+          TAG="${{ github.event.inputs.tag_version }}"
+          ARCHIVE="trade-collector-${TAG}.tar.gz"
           
           # Создаем рабочую директорию
           DEPLOY_DIR="/tmp/trade-collector-deploy-$(date +%Y%m%d%H%M%S)"
