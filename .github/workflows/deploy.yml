@@ -73,7 +73,10 @@ jobs:
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
           set -e
           echo "📦 Starting deployment..."
-        
+          
+          TAG='${{ github.event.inputs.tag_version }}'
+          ARCHIVE='trade-collector-${TAG}.tar.gz'
+          
           # Создаем рабочую директорию
           DEPLOY_DIR="/tmp/trade-collector-deploy-$(date +%Y%m%d%H%M%S)"
           mkdir -p "$DEPLOY_DIR"
