@@ -3,9 +3,31 @@ set -e
 
 echo "🗄️ Database initialization started..."
 
+# Загружаем переменные окружения из файла если он существует
+if [ -f /etc/default/trade-collector ]; then
+    echo "📄 Loading environment from /etc/default/trade-collector"
+    # Безопасно загружаем переменные
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+        # Пропускаем комментарии и пустые строки
+        if [[ "$key" =~ ^[[:space:]]*# ]] || [[ -z "$key" ]] || [[ "$key" =~ ^[[:space:]]*$ ]]; then
+            continue
+        fi
+        # Убираем кавычки
+        value=${value#\'}
+        value=${value%\'}
+        value=${value#\"}
+        value=${value%\"}
+
+        # Экспортируем переменную
+        export "$key"="$value"
+    done < /etc/default/trade-collector
+fi
+
 # Проверяем переменные
 if [ -z "$DB_PASSWORD" ]; then
     echo "❌ ERROR: DB_PASSWORD is not set"
+    echo "Available variables:"
+    env | grep DB_ || echo "No DB_ variables found"
     exit 1
 fi
 
@@ -16,6 +38,7 @@ PG_USER="${DB_USER:-trade_user}"
 PG_NAME="${DB_NAME:-trade_collector}"
 
 echo "🔧 Configuring PostgreSQL at $PG_HOST:$PG_PORT..."
+echo "📊 Using database: $PG_NAME, user: $PG_USER"
 
 # Устанавливаем пароль для psql
 export PGPASSWORD="$DB_PASSWORD"
@@ -50,6 +73,7 @@ SCHEMA_FILES=(
     "/opt/trade-collector/sql/001_init_schema.sql"
     "./sql/001_init_schema.sql"
     "./001_init_schema.sql"
+    "/opt/trade-collector/001_init_schema.sql"
 )
 
 for schema_file in "${SCHEMA_FILES[@]}"; do
