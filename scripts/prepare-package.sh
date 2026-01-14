@@ -84,3 +84,9 @@ echo "📁 Contents of deploy-package/:"
 ls -la deploy-package/
 echo ""
 echo "📦 Total size: $(du -sh deploy-package/ | cut -f1)"
+
+# В самом конце prepare-package.sh
+TAG=${1:-"$(date +%Y%m%d-%H%M%S)"}
+TAR_NAME="trade-collector-${TAG}.tar.gz"
+tar -czf "$TAR_NAME" -C deploy-package .
+echo "✅ Deployment archive created: $TAR_NAME"

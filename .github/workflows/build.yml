@@ -42,23 +42,23 @@ jobs:
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
-          DB_PORT: ${{ secrets.DB_PORT || '6432' }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
           DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
           DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
         run: |
           chmod +x scripts/prepare-package.sh
-          ./scripts/prepare-package.sh
+          ./scripts/prepare-package.sh "${{ github.ref_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: trade-collector-package
-          path: deploy-package/
+          path: trade-collector-*.tar.gz
           retention-days: 10
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
-          files: deploy-package/*
+          files: trade-collector-*.tar.gz
           generate_release_notes: true

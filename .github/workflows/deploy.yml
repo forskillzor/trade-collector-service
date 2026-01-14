@@ -1,10 +1,9 @@
 name: Deploy Trade Collector
-
 on:
   workflow_dispatch:
     inputs:
       tag_version:
-        description: 'Версия релиза для деплоя (например: v1.0.0)'
+        description: 'Release tag (e.g. v1.0.0)'
         required: true
         type: string
 
@@ -15,70 +14,44 @@ jobs:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_HOST: ${{ secrets.DB_HOST || 'localhost' }}
-      DB_PORT: ${{ secrets.DB_PORT || '6432' }}
-      DB_USER: ${{ secrets.DB_USER || 'trade_user' }}
-      DB_NAME: ${{ secrets.DB_NAME || 'trade_collector' }}
 
     steps:
-      - uses: actions/checkout@v4
-
       - name: 🔧 Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          
-      - name: 📦 Download + Send Source Code
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: 📥 Download release archive
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.inputs.tag_version }}"
-          ARCHIVE_NAME="TradeCollectorService-${TAG#v}.tar.gz"  # v0.0.1 → 0.0.1
-          
-          echo "📥 Скачиваем $ARCHIVE_NAME"
-          
-          curl -sL \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$(curl -sL -H 'Authorization: token $GITHUB_TOKEN' 'https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG' | jq -r '.assets[] | select(.name == "Source code (tar.gz)") | .id')" \
-            -o "/tmp/source_archive.tar.gz"
-          
-          scp -i ~/.ssh/vps_key /tmp/source_archive.tar.gz $VPS_USER@$VPS_HOST:/tmp/
-    
+          ARCHIVE="trade-collector-${TAG}.tar.gz"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${ARCHIVE}"
+          echo "Downloading $URL"
+          curl -L -H "Authorization: token $GITHUB_TOKEN" -o "/tmp/$ARCHIVE" "$URL"
 
-      - name: 📦 Download source code tar.gz and stream to server
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 📤 Copy to VPS and deploy
         run: |
-          echo "📦 Downloading source code for tag ${{ github.event.inputs.tag_version }}..."
-          
-          # URL to the source code tarball by tag
-          SOURCE_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.inputs.tag_version }}.tar.gz"
-          
-          # Download and extract directly on the server
-          ssh -i ~/.ssh/vps_key $VPS_USER@$VPS_HOST "mkdir -p /tmp/release && cd /tmp/release && curl -sL -H 'Authorization: Bearer $GITHUB_TOKEN' '$SOURCE_URL' | tar -xzf - --strip-components=1"
-      
-          echo "✅ Source code extracted on server at /tmp/release"              
-          echo "✅ Source code extracted on server at /tmp/release"
-          # Сделаем скрипты исполняемыми
-          chmod +x /tmp/release/deploy-remote.sh
-          chmod +x /tmp/release/verify-deployment.sh
+          TAG="${{ github.event.inputs.tag_version }}"
+          scp -i ~/.ssh/vps_key "/tmp/trade-collector-${TAG}.tar.gz" \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
 
-          # Установим переменные окружения
-          export RELEASE_TAG='${{ github.event.inputs.tag_version }}'
-          export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-          export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-          export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
-          export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
-          export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
-          export VPS_HOST='$VPS_HOST'
+          ssh -i ~/.ssh/vps_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
+            set -e
+            cd /tmp
+            rm -rf trade-collector-deploy
+            mkdir trade-collector-deploy
+            tar -xzf trade-collector-${TAG}.tar.gz -C trade-collector-deploy
+            cd trade-collector-deploy
 
-          echo '🚀 Starting deployment of \$RELEASE_TAG...'
-          /tmp/release/deploy-remote.sh
+            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+            export DB_PORT='${{ secrets.DB_PORT || '6432' }}'
+            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
 
-          echo '🔍 Starting verification...'
-          /tmp/release/verify-deployment.sh
+            ./deploy-remote.sh
           "
