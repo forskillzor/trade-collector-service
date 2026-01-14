@@ -71,34 +71,36 @@ jobs:
           
           echo "🔧 Deploying on VPS..."
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
-            set -e
-            echo "📦 Starting deployment..."
-          
-            # Создаем рабочую директорию
-            DEPLOY_DIR="/tmp/trade-collector-deploy-$(date +%Y%m%d%H%M%S)"
-            mkdir -p "$DEPLOY_DIR"
-            cd "$DEPLOY_DIR"
-          
-            # Распаковываем архив
-            echo "📂 Extracting archive..."
-            tar -xzf "/tmp/$ARCHIVE"
-          
-            # Экспортируем переменные окружения
-            export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-            export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-            export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
-            export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
-            export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
-          
-            echo "🔧 Running deploy-remote.sh..."
-            echo "DB_HOST: $DB_HOST"
-            echo "DB_PORT: $DB_PORT"
-            echo "DB_USER: $DB_USER"
-            echo "DB_NAME: $DB_NAME"
-          
-            # Делаем скрипт исполняемым и запускаем
-            chmod +x deploy-remote.sh
-            ./deploy-remote.sh
-          
-            echo "✅ Deployment completed successfully!"
+          set -e
+          echo "📦 Starting deployment..."
+        
+          # Создаем рабочую директорию
+          DEPLOY_DIR="/tmp/trade-collector-deploy-$(date +%Y%m%d%H%M%S)"
+          mkdir -p "$DEPLOY_DIR"
+          cd "$DEPLOY_DIR"
+        
+          # Распаковываем архив
+          echo "📂 Extracting archive..."
+          echo "archive is /tmp/$ARCHIVE"
+        
+          tar -xzf "/tmp/$ARCHIVE"
+        
+          # Экспортируем переменные окружения
+          export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
+          export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+          export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
+          export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+          export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
+        
+          echo "🔧 Running deploy-remote.sh..."
+          echo "DB_HOST: $DB_HOST"
+          echo "DB_PORT: $DB_PORT"
+          echo "DB_USER: $DB_USER"
+          echo "DB_NAME: $DB_NAME"
+        
+          # Делаем скрипт исполняемым и запускаем
+          chmod +x deploy-remote.sh
+          ./deploy-remote.sh
+        
+          echo "✅ Deployment completed successfully!"
           EOF
