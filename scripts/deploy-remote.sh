@@ -68,13 +68,6 @@ echo "📁 Creating directories..."
 sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
 sudo mkdir -p "$APP_DIR/backups"
 
-# 5. Резервируем старую версию
-if [ -f "$APP_DIR/trade-collector.jar" ]; then
-    echo "💾 Backing up previous version..."
-    BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S).jar"
-    sudo cp "$APP_DIR/trade-collector.jar" "$APP_DIR/backups/$BACKUP_NAME"
-fi
-
 # 6. Останавливаем сервис
 echo "🛑 Stopping service..."
 sudo systemctl stop "$APP_NAME.service" 2>/dev/null || true
@@ -82,7 +75,7 @@ sudo systemctl stop "$APP_NAME.service" 2>/dev/null || true
 # 7. Копируем файлы
 echo "📄 Copying files..."
 sudo cp -v trade-collector.jar config.json "$APP_DIR/"
-sudo cp -v ./scripts/trade-collector.service ./scripts/run.sh ./scripts/init-database.sh "$APP_DIR/"
+sudo cp -v trade-collector.service run.sh init-database.sh "$APP_DIR/"
 sudo cp -v ./sql/001_init_schema.sql "$APP_DIR/sql/001_init_schema.sql"
 
 # 8. Создаем environment файл

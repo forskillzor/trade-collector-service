@@ -51,8 +51,8 @@ done
 echo "📄 Copying optional files..."
 
 # SQL схема (если есть)
-if [ -f "scripts/001_init_schema.sql" ]; then
-    cp "scripts/001_init_schema.sql" deploy-package/
+if [ -f "sql/001_init_schema.sql" ]; then
+    cp "sql/001_init_schema.sql" deploy-package/
     echo "✅ SQL schema copied"
 fi
 
