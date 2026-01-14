@@ -46,8 +46,9 @@ psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_NAME" -c "GRANT ALL PRIVI
 
 # 4. Выполняем SQL схему если она есть
 SCHEMA_FILES=(
-    "/tmp/deploy/001_init_schema.sql"
-    "/opt/trade-collector/001_init_schema.sql"
+    "/tmp/deploy/sql/001_init_schema.sql"
+    "/opt/trade-collector/sql/001_init_schema.sql"
+    "./sql/001_init_schema.sql"
     "./001_init_schema.sql"
 )
 

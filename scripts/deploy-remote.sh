@@ -76,7 +76,7 @@ sudo systemctl stop "$APP_NAME.service" 2>/dev/null || true
 echo "📄 Copying files..."
 sudo cp -v trade-collector.jar config.json "$APP_DIR/"
 sudo cp -v trade-collector.service run.sh init-database.sh "$APP_DIR/"
-sudo cp -v ./sql/001_init_schema.sql "$APP_DIR/sql/001_init_schema.sql"
+sudo cp -v 001_init_schema.sql "$APP_DIR/sql/001_init_schema.sql"
 
 # 8. Создаем environment файл
 echo "🔒 Creating environment file..."
