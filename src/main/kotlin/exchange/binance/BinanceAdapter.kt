@@ -5,7 +5,7 @@ import com.aandios.model.Trade
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
     override fun getWebSocketUrl(symbol: String): String {
-        return "wss://fstream.binance.com/ws/${symbol.lowercase()}@trade"
+        return "wss://fstream.binance.com/market/ws/${symbol.lowercase()}@trade"
     }
 
     override fun parseTrade(json: String, symbol: String): Trade? {
