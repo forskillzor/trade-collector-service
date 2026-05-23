@@ -170,14 +170,5 @@ object ConfigManager {
         )
     }
 
-//    fun saveToFile(path: String = "config.json") {
-//        try {
-//            File(path).parentFile?.mkdirs()
-//            File(path).writeText(prettyJson)
-//        } catch (e: Exception) {
-//            println("❌ Ошибка сохранения конфигурации: ${e.message}")
-//        }
-//    }
-
     fun getConfig(): AppConfig = config
 }

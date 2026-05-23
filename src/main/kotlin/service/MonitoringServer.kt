@@ -31,10 +31,8 @@ class MonitoringServer(
         serverJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Создаем сервер
-                val engine = embeddedServer(Jetty, port = port) {
-                    install(ContentNegotiation) {
-                        json(json)
-                    }
+                val engine = embeddedServer(Jetty, port = port, host = "localhost") {
+                    install(ContentNegotiation) { json(json) }
 
                     routing {
                         get("/") {
@@ -58,7 +56,7 @@ class MonitoringServer(
                             call.respond(
                                 mapOf(
                                     "status" to "healthy",
-                                    "timestamp" to System.currentTimeMillis(),
+//                                    "timestamp" to System.currentTimeMillis(),
                                     "service" to "TradeCollectorService",
                                     "version" to BuildConfig.VERSION
                                 )
@@ -78,16 +76,16 @@ class MonitoringServer(
                             val status = mapOf(
                                 "service" to "TradeCollectorService",
                                 "version" to BuildConfig.VERSION,
-                                "timestamp" to System.currentTimeMillis(),
-                                "uptime" to "TODO",
+////                                "timestamp" to System.currentTimeMillis(),
+//                                "uptime" to "TODO",
                                 "metrics" to metrics,
-                                "exchanges" to config.exchanges.map { it.name },
-                                "memory" to mapOf(
-                                    "totalMB" to memory.totalMemory() / 1024 / 1024,
-                                    "freeMB" to memory.freeMemory() / 1024 / 1024,
-                                    "maxMB" to memory.maxMemory() / 1024 / 1024
-                                ),
-                                "threads" to Thread.activeCount()
+//                                "exchanges" to config.exchanges.map { it.name },
+//                                "memory" to mapOf(
+//                                    "totalMB" to memory.totalMemory() / 1024 / 1024,
+//                                    "freeMB" to memory.freeMemory() / 1024 / 1024,
+//                                    "maxMB" to memory.maxMemory() / 1024 / 1024
+//                                ),
+//                                "threads" to Thread.activeCount()
                             )
                             call.respond(status)
                         }

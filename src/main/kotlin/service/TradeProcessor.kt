@@ -32,16 +32,6 @@ class TradeProcessor(
     private val instrumentStats = ConcurrentHashMap<String, InstrumentStats>()
     private val adapterCache = mutableMapOf<String, ExchangeAdapter>()
 
-//    data class ProcessorConfig(
-//        val batchSize: Int = 1000,
-//        val flushIntervalMs: Long = 1000,
-//        val windowSize: Int = 1000000,
-//        val slideStep: Int = 100000,
-//        val filterPercentile: Double = 0.98,
-//        val timeframes: List<String> = listOf("1m", "5m", "1h"),
-//        val aggregatesOutputDir: String = "./aggregates"
-//    )
-
     data class InstrumentStats(
         var totalTrades: Long = 0,
         var lastTradeTime: Long = 0,
@@ -102,6 +92,7 @@ class TradeProcessor(
                 aggregateProcessor.processTrade(trade)
 
                 // Логируем каждые 1000 тиков
+                // todo нужен ли здесь этот лог? в продакшн?
                 if (totalTrades % 1000 == 0L) {
                     val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
                     log.debug {
@@ -168,12 +159,6 @@ class TradeProcessor(
             "timestamp" to System.currentTimeMillis()
         )
     }
-
-    fun getDatabaseDAO(): TradeDAO = dao
-
-    fun getVolumeFilterProcessor(): VolumeFilterProcessor = volumeFilterProcessor
-
-    fun getAggregateProcessor(): AggregateProcessor = aggregateProcessor
 
     fun shutdown() {
         batchProcessor.stop()
