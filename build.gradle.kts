@@ -30,6 +30,7 @@ tasks {
         archiveBaseName.set("trade-collector")
         archiveClassifier.set("")
         archiveVersion.set("")
+        mergeServiceFiles()
         manifest {
             attributes("Main-Class" to "com.aandios.MainKt")
         }

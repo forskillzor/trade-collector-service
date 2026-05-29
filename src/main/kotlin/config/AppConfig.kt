@@ -18,7 +18,7 @@ data class ExchangeConfig(
 @Serializable
 data class DatabaseConfig(
     val type: String = "postgresql",
-    val host: String = "95.81.99.28",
+    val host: String = "localhost",
     val port: Int = 5432,
     val database: String = "trade_collector",
     val username: String = "trade_user",

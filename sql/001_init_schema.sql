@@ -1,6 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-DROP TABLE IF EXISTS raw_trades CASCADE;
 -- 1. Таблица для сырых сделок (raw_trades)
 CREATE TABLE IF NOT EXISTS raw_trades
 (

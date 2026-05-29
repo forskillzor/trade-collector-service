@@ -43,3 +43,12 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Project ###
+config.json
+.env
+*.log
+logs/
+aggregates/
+exports/
+backups/

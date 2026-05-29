@@ -1,0 +1,46 @@
+{
+  "exchanges": [
+    {
+      "name": "Binance",
+      "symbols": ["btcusdt", "ethusdt", "solusdt"],
+      "enabled": true
+    },
+    {
+      "name": "Bybit",
+      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+      "enabled": false
+    }
+  ],
+  "database": {
+    "type": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "database": "trade_collector",
+    "username": "trade_user",
+    "password": null,
+    "batchSize": 1000,
+    "flushIntervalMs": 1000
+  },
+  "processor": {
+    "batchSize": 1000,
+    "flushIntervalMs": 1000,
+    "windowSize": 100000,
+    "slideStep": 10000,
+    "filterPercentile": 0.98,
+    "timeframes": ["1m", "5m", "1h"],
+    "aggregatesOutputDir": "./aggregates"
+  },
+  "export": {
+    "enabled": false,
+    "intervalMinutes": 60,
+    "outputDir": "./exports",
+    "keepDays": 7
+  },
+  "monitoring": {
+    "httpPort": 8080,
+    "enableMetrics": true,
+    "metricsPath": "/metrics",
+    "healthPath": "/health",
+    "statusPath": "/status"
+  }
+}

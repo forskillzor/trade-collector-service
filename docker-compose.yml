@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trade-collector-db
+    environment:
+      POSTGRES_DB: trade_collector
+      POSTGRES_USER: trade_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/001_init_schema.sql:/docker-entrypoint-initdb.d/001_init_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trade_user -d trade_collector"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
