@@ -83,7 +83,13 @@ dependencies {
     implementation("org.apache.arrow:arrow-memory-netty:14.0.1")
 
     // Utils
-    implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")}
+    implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")
+
+    // t-Digest
+    implementation("com.tdunning:t-digest:3.3")
+}
+
+
 
 
 tasks.test {
