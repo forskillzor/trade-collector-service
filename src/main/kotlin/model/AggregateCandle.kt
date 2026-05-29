@@ -1,7 +1,6 @@
 package com.aandios.model
 
 import java.math.BigDecimal
-import java.nio.ByteBuffer
 
 data class AggregateCandle(
     val exchange: String,
@@ -9,11 +8,7 @@ data class AggregateCandle(
     val timeframe: String,
     val startTime: Long,
     val endTime: Long,
-
-    // Arrow файл с данными
-    val arrowData: ByteBuffer,
-
-    // Метаданные
+    val priceLevelsJson: String,
     val totalTicks: Long,
     val minPrice: BigDecimal,
     val maxPrice: BigDecimal,

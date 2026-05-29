@@ -6,9 +6,6 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import mu.KotlinLogging
 import java.math.BigDecimal
-import java.nio.ByteBuffer
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.util.*
 
 private val log = KotlinLogging.logger {}
@@ -218,21 +215,17 @@ class TradeDAO(
 
     // ========== AGGREGATES (ARROW FILES) ==========
 
-    fun saveAggregate(aggregate: AggregateCandle, filePath: String) {
-        // Сохраняем Arrow файл на диск
-        Files.write(Paths.get(filePath), aggregate.arrowData.array())
-
+    fun saveAggregate(aggregate: AggregateCandle) {
         dataSource.connection.use { conn ->
             conn.prepareStatement("""
                 INSERT INTO aggregates 
                 (exchange, symbol, timeframe, start_time, end_time,
-                 arrow_file_path, arrow_file_size, total_ticks,
+                 price_levels_jsonb, total_ticks,
                  min_price, max_price, price_levels)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
                 ON CONFLICT (exchange, symbol, timeframe, start_time, end_time) 
                 DO UPDATE SET
-                    arrow_file_path = EXCLUDED.arrow_file_path,
-                    arrow_file_size = EXCLUDED.arrow_file_size,
+                    price_levels_jsonb = EXCLUDED.price_levels_jsonb,
                     total_ticks = EXCLUDED.total_ticks,
                     min_price = EXCLUDED.min_price,
                     max_price = EXCLUDED.max_price,
@@ -244,12 +237,11 @@ class TradeDAO(
                 stmt.setString(3, aggregate.timeframe)
                 stmt.setLong(4, aggregate.startTime)
                 stmt.setLong(5, aggregate.endTime)
-                stmt.setString(6, filePath)
-                stmt.setLong(7, aggregate.arrowData.array().size.toLong())
-                stmt.setLong(8, aggregate.totalTicks)
-                stmt.setBigDecimal(9, aggregate.minPrice)
-                stmt.setBigDecimal(10, aggregate.maxPrice)
-                stmt.setInt(11, aggregate.priceLevels)
+                stmt.setString(6, aggregate.priceLevelsJson)
+                stmt.setLong(7, aggregate.totalTicks)
+                stmt.setBigDecimal(8, aggregate.minPrice)
+                stmt.setBigDecimal(9, aggregate.maxPrice)
+                stmt.setInt(10, aggregate.priceLevels)
 
                 stmt.execute()
             }
@@ -265,7 +257,7 @@ class TradeDAO(
     ): AggregateCandle? {
         return dataSource.connection.use { conn ->
             conn.prepareStatement("""
-                SELECT arrow_file_path, total_ticks, min_price, max_price, price_levels
+                SELECT price_levels_jsonb, total_ticks, min_price, max_price, price_levels
                 FROM aggregates
                 WHERE exchange = ? AND symbol = ? AND timeframe = ? 
                   AND start_time = ? AND end_time = ?
@@ -278,16 +270,13 @@ class TradeDAO(
 
                 val rs = stmt.executeQuery()
                 if (rs.next()) {
-                    val filePath = rs.getString("arrow_file_path")
-                    val fileData = Files.readAllBytes(Paths.get(filePath))
-
                     AggregateCandle(
                         exchange = exchange,
                         symbol = symbol,
                         timeframe = timeframe,
                         startTime = startTime,
                         endTime = endTime,
-                        arrowData = ByteBuffer.wrap(fileData),
+                        priceLevelsJson = rs.getString("price_levels_jsonb"),
                         totalTicks = rs.getLong("total_ticks"),
                         minPrice = rs.getBigDecimal("min_price"),
                         maxPrice = rs.getBigDecimal("max_price"),

@@ -14,10 +14,6 @@ repositories {
 }
 application {
     mainClass.set("com.aandios.MainKt")
-    applicationDefaultJvmArgs = listOf(
-        "--add-opens=java.base/java.nio=ALL-UNNAMED",
-        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
-    )
 }
 java {
     toolchain {
@@ -78,10 +74,6 @@ dependencies {
 
     //Postgres
     implementation("org.postgresql:postgresql:42.7.1")
-
-    // Apache Arrow для хранения агрегированных данных
-    implementation("org.apache.arrow:arrow-vector:14.0.1")
-    implementation("org.apache.arrow:arrow-memory-netty:14.0.1")
 
     // Utils
     implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")

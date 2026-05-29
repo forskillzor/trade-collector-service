@@ -54,8 +54,7 @@ class TradeProcessor(
 
         aggregateProcessor = AggregateProcessor(
             dao = dao,
-            timeframes = config.timeframes,
-            outputDir = config.aggregatesOutputDir
+            timeframes = config.timeframes
         )
 
         log.info {

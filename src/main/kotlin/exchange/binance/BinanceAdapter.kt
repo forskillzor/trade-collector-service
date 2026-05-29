@@ -5,7 +5,7 @@ import com.aandios.model.Trade
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
     override fun getWebSocketUrl(symbol: String): String {
-        return "wss://fstream.binance.com/ws/${symbol.lowercase()}@trade"
+        return "wss://fstream.binance.com/market/ws/${symbol.lowercase()}@aggTrade"
     }
 
     override fun parseTrade(json: String, symbol: String): Trade? {
@@ -27,7 +27,7 @@ class BinanceAdapter : BaseExchangeAdapter("Binance") {
     override fun isTradeMessage(json: String): Boolean {
         return try {
             val node = mapper.readTree(json)
-            node.has("e") && node["e"].asText() == "trade"
+            node.has("e") && node["e"].asText() == "aggTrade"
         } catch (e: Exception) {
             false
         }

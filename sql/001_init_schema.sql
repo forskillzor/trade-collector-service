@@ -29,12 +29,10 @@ CREATE TABLE IF NOT EXISTS aggregates
     start_time       BIGINT         NOT NULL,
     end_time         BIGINT         NOT NULL,
 
-    -- Файл Arrow с данными
-    arrow_file_path  TEXT           NOT NULL,
-    arrow_file_size  BIGINT         NOT NULL,
-    compression_type VARCHAR(20) DEFAULT 'zstd',
+    -- JSONB с данными ценовых уровней [{price, bidVolume, askVolume, bidCount, askCount}]
+    price_levels_jsonb JSONB         NOT NULL,
 
-    -- Метаданные о файле
+    -- Метаданные
     total_ticks      BIGINT         NOT NULL,
     min_price        DECIMAL(20, 8) NOT NULL,
     max_price        DECIMAL(20, 8) NOT NULL,
