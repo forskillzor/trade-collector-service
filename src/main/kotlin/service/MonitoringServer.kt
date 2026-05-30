@@ -38,14 +38,14 @@ class MonitoringServer(
                         get("/") {
                             call.respondText(
                                 """
-                                📊 TradeCollectorService Monitoring
+                                TradeCollectorService Monitoring
                                 ================================
                                 
                                 Endpoints:
-                                • /health     - Проверка работоспособности
-                                • /metrics    - Метрики производительности  
-                                • /status     - Детальный статус сервиса
-                                • /exchanges  - Список подключенных бирж
+                                * /health     - Health check
+                                * /metrics    - Performance metrics
+                                * /status     - Service status
+                                * /exchanges  - Connected exchanges
                                 
                                 Version: ${BuildConfig.VERSION}
                                 """.trimIndent()
@@ -114,11 +114,11 @@ class MonitoringServer(
                 engine.start(wait = true)
 
             } catch (e: Exception) {
-                log.error(e) { "❌ Ошибка при запуске сервера мониторинга" }
+                log.error(e) { "Monitoring server start error" }
             }
         }
 
-        log.info { "🌐 Сервер мониторинга запускается на порту $port" }
+        log.info { "Monitoring server started on port $port" }
     }
 
     suspend fun stop() {
@@ -131,6 +131,6 @@ class MonitoringServer(
             }
         }
         server = null
-        log.info { "🌐 Сервер мониторинга остановлен" }
+        log.info { "Monitoring server stopped" }
     }
 }

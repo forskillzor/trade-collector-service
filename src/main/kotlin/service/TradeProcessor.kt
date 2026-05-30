@@ -57,12 +57,7 @@ class TradeProcessor(
             timeframes = config.timeframes
         )
 
-        log.info {
-            "✅ TradeProcessor инициализирован: " +
-                    "batchSize=${config.batchSize}, " +
-                    "windowSize=${config.windowSize}, " +
-                    "percentile=${config.filterPercentile}"
-        }
+        log.info { "TradeProcessor initialized | batch=${config.batchSize} window=${config.windowSize} perc=${config.filterPercentile}" }
     }
 
     fun process(json: String, exchange: String, symbol: String) {
@@ -90,16 +85,9 @@ class TradeProcessor(
                 // 3. Обрабатываем для агрегации в свечи
                 aggregateProcessor.processTrade(trade)
 
-                // Логируем каждые 1000 тиков
-                // todo нужен ли здесь этот лог? в продакшн?
                 if (totalTrades % 1000 == 0L) {
                     val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
-                    log.debug {
-                        "📊 Обработано: $totalTrades (${tradesPerSecond}/с) | " +
-                                "${exchange}/${trade.symbol}: ${trade.price} | " +
-                                "Объём: ${volumeUsd} USD | " +
-                                "Очередь: ${stats.batchQueueSize}"
-                    }
+                    log.debug { "tick #$totalTrades | tps=${tradesPerSecond}/s | ${exchange}/${trade.symbol} price=${trade.price} vol=$volumeUsd queue=${stats.batchQueueSize}" }
                 }
 
                 // Периодические операции
@@ -115,7 +103,7 @@ class TradeProcessor(
                 }
             }
         } catch (e: Exception) {
-            log.error(e) { "❌ Ошибка обработки $exchange/$symbol" }
+            log.error(e) { "Process error: $exchange/$symbol" }
         }
     }
 
@@ -139,10 +127,10 @@ class TradeProcessor(
             // Очищаем сырые сделки (храним только ~1 миллион)
             val deletedCount = dao.cleanupOldRawTrades()
             if (deletedCount > 0) {
-                log.info { "🧹 Очищено $deletedCount старых записей из raw_trades" }
+                log.info { "Cleaned $deletedCount old raw_trades" }
             }
         } catch (e: Exception) {
-            log.error(e) { "❌ Ошибка очистки старых данных" }
+            log.error(e) { "Raw trades cleanup error" }
         }
     }
 
@@ -162,6 +150,6 @@ class TradeProcessor(
     fun shutdown() {
         batchProcessor.stop()
         aggregateProcessor.flushAll()
-        log.info { "✅ TradeProcessor остановлен" }
+        log.info { "TradeProcessor stopped" }
     }
 }

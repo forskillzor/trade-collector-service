@@ -118,23 +118,20 @@ object ConfigManager {
             }
 
             if (configFile == null) {
-                log.error { "❌ Файл конфигурации не найден по путям:" }
-                possiblePaths.forEach { log.error { "   • $it" } }
-                log.error { "📁 Текущая рабочая директория: ${System.getProperty("user.dir")}" }
-                log.error { "📁 Абсолютный путь .: ${File(".").absolutePath}" }
+                log.error { "Config not found, searched: ${possiblePaths.joinToString(", ")} (cwd=${File(".").absolutePath})" }
                 return false
             }
 
-            log.info { "✅ Найден config.json: $foundPath" }
+            log.info { "Config found: $foundPath" }
             val json = configFile.readText()
 
             config = jsonFormat.decodeFromString<AppConfig>(json)
 
-            log.info { "✅ Конфигурация успешно загружена" }
+            log.info { "Config loaded successfully" }
             true
 
         } catch (e: Exception) {
-            log.error(e) { "❌ Ошибка парсинга конфигурации" }
+            log.error(e) { "Config parse error" }
             false
         }
     }

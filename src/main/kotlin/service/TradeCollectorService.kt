@@ -21,12 +21,12 @@ class TradeCollectorService(
 
     suspend fun start() {
         if (isRunning.getAndSet(true)) {
-            log.warn { "⚠️ Сервис уже запущен" }
+            log.warn { "Service already running" }
             return
         }
 
         try {
-            log.info { "🔧 Инициализация TradeCollectorService..." }
+            log.info { "Initializing TradeCollectorService..." }
 
             coroutineScope = CoroutineScope(Dispatchers.Default)
 
@@ -40,7 +40,7 @@ class TradeCollectorService(
                 exchangeClients.add(client)
             }
 
-            log.info { "✅ Создано клиентов: ${exchangeClients.size}" }
+            log.info { "Created ${exchangeClients.size} clients" }
 
             // Запуск мониторинга
             if (config.monitoring.enableMetrics) {
@@ -58,7 +58,7 @@ class TradeCollectorService(
                     try {
                         client.start()
                     } catch (e: Exception) {
-                        log.error(e) { "❌ Ошибка при запуске клиента" }
+                        log.error(e) { "Client start error" }
                     }
                 }
             }
@@ -71,10 +71,10 @@ class TradeCollectorService(
                 }
             }
 
-            log.info { "✅ Сервис успешно запущен" }
+            log.info { "Service started successfully" }
 
         } catch (e: Exception) {
-            log.error(e) { "❌ Ошибка при запуске сервиса" }
+            log.error(e) { "Service start error" }
             stop()
         }
     }
@@ -83,18 +83,7 @@ class TradeCollectorService(
         val metrics = tradeProcessor?.getMetrics() ?: emptyMap()
         val memory = Runtime.getRuntime()
 
-        log.info {
-            """
-            📊 === Статус сервиса ===
-            📈 Обработано тиков: ${metrics["totalTrades"] ?: 0}
-            ⚡ TPS: ${metrics["tradesPerSecond"] ?: 0}
-            📦 Очередь БД: ${metrics["batchQueueSize"] ?: 0}
-            🔌 Клиентов: ${exchangeClients.size}
-            💾 Память: ${memory.totalMemory() / 1024 / 1024} MB
-            🆓 Свободно: ${memory.freeMemory() / 1024 / 1024} MB
-            =====================
-            """.trimIndent()
-        }
+        log.info { "STATUS | ticks=${metrics["totalTrades"] ?: 0} tps=${metrics["tradesPerSecond"] ?: 0} queue=${metrics["batchQueueSize"] ?: 0} clients=${exchangeClients.size} mem_total=${memory.totalMemory() / 1024 / 1024}MB mem_free=${memory.freeMemory() / 1024 / 1024}MB" }
     }
 
     suspend fun stop() {
@@ -102,7 +91,7 @@ class TradeCollectorService(
             return
         }
 
-        log.info { "🛑 Остановка TradeCollectorService..." }
+        log.info { "Stopping TradeCollectorService..." }
 
         // Остановка процессора
         tradeProcessor?.shutdown()
@@ -112,7 +101,7 @@ class TradeCollectorService(
             try {
                 client.stop()
             } catch (e: Exception) {
-                log.error(e) { "⚠️ Ошибка при остановке клиента" }
+                log.error(e) { "Client stop error" }
             }
         }
         exchangeClients.clear()
@@ -130,7 +119,7 @@ class TradeCollectorService(
         tradeProcessor = null
         monitoringServer = null
 
-        log.info { "✅ Сервис остановлен" }
+        log.info { "Service stopped" }
     }
 
     fun isRunning(): Boolean = isRunning.get()

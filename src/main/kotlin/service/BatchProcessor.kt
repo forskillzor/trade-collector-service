@@ -26,7 +26,7 @@ class BatchProcessor(
             processBatchLoop()
         }
 
-        log.info { "✅ BatchProcessor запущен (batchSize=$batchSize, flushIntervalMs=$flushIntervalMs)" }
+        log.info { "BatchProcessor started | batch=$batchSize flush=${flushIntervalMs}ms" }
     }
 
     fun addTrade(trade: Trade) {
@@ -72,9 +72,9 @@ class BatchProcessor(
         if (batch.isNotEmpty()) {
             try {
                 dao.insertRawTradesBatch(batch)
-                log.debug { "✅ Вставлено ${batch.size} тиков в raw_trades для $key" }
+                log.debug { "Inserted ${batch.size} trades for $key" }
             } catch (e: Exception) {
-                log.error(e) { "❌ Ошибка вставки батча в raw_trades" }
+                log.error(e) { "Batch insert error" }
                 // Возвращаем обратно в ту же очередь
                 batch.forEach { trade ->
                     // Проверяем, что очередь ещё существует
@@ -100,6 +100,6 @@ class BatchProcessor(
             flushBatch(key)
         }
 
-        log.info { "✅ BatchProcessor остановлен" }
+        log.info { "BatchProcessor stopped" }
     }
 }

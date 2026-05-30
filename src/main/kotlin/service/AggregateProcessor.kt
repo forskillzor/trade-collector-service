@@ -118,11 +118,7 @@ class AggregateProcessor(
         val aggregate = builder.buildAggregate()
         dao.saveAggregate(aggregate)
 
-        log.info {
-            "📊 Агрегат сохранен: ${builder.exchange}/${builder.symbol} " +
-                    "${builder.timeframe} (${builder.startTime}-${builder.endTime}) " +
-                    "тиков=${builder.totalTicks}, уровней=${builder.priceLevels.size}"
-        }
+        log.info { "Aggregate ${builder.exchange}/${builder.symbol} ${builder.timeframe} | ticks=${builder.totalTicks} levels=${builder.priceLevels.size}" }
     }
 
     fun flushAll() {

@@ -118,7 +118,7 @@ class VolumeFilterProcessor(
         }
 
         if (size == 0) {
-            log.warn { "Пустое окно для ${window.exchange}/${window.symbol}" }
+            log.warn { "Empty window for ${window.exchange}/${window.symbol}" }
             return
         }
 
@@ -160,12 +160,7 @@ class VolumeFilterProcessor(
 
         dao.saveVolumeWindow(volumeWindow)
 
-        log.debug {
-            "📊 Окно ${window.exchange}/${window.symbol}: " +
-                    "trades=${window.totalTrades}, " +
-                    "threshold=${volumeThreshold.toDouble()} USD, " +
-                    "98p=${p98Volume.toDouble()} USD"
-        }
+        log.debug { "Window ${window.exchange}/${window.symbol} | trades=${window.totalTrades} threshold=${volumeThreshold.toDouble()} 98p=${p98Volume.toDouble()}" }
     }
 
     private fun checkAndSaveFilteredTrade(
@@ -202,10 +197,7 @@ class VolumeFilterProcessor(
             // Сохраняем фильтрованную сделку
             dao.insertFilteredTrade(filteredTrade)
 
-            log.info {
-                "🎯 Большая сделка ${trade.exchange}/${trade.symbol}: " +
-                        "${category.name} ${volumeUsd.toDouble()} USD > ${window.volumeThreshold.toDouble()} USD"
-            }
+            log.info { "Large trade ${trade.exchange}/${trade.symbol} | ${category} vol=${volumeUsd.toDouble()} > threshold=${window.volumeThreshold.toDouble()}" }
         }
     }
 

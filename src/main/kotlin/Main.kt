@@ -12,22 +12,10 @@ import java.io.File
 private val log = KotlinLogging.logger {}
 
 fun main() = runBlocking {
-    log.info { "=== ОТЛАДКА ПУТЕЙ ===" }
-    log.info { "1. System.getProperty(\"user.dir\"): ${System.getProperty("user.dir")}" }
-    log.info { "2. File(\".\").absolutePath: ${File(".").absolutePath}" }
-    log.info { "3. File(\"config.json\").absolutePath: ${File("config.json").absolutePath}" }
-    log.info { "4. File(\"config.json\").exists(): ${File("config.json").exists()}" }
-
-    // Посмотрим, что есть в текущей директории
-    val currentDir = File(".")
-    log.info { "5. Содержимое текущей директории:" }
-    currentDir.listFiles()?.sortedBy { it.name }?.forEach { file ->
-        log.info { "   - ${file.name} (${if (file.isFile) "файл" else "папка"}, ${file.length()} байт)" }
-    }
-    log.info { "=========================" }
+    log.info { "DEBUG | cwd=${File(".").absolutePath} config_exists=${File("config.json").exists()}" }
 
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        log.error(throwable) { "Необработанное исключение" }
+        log.error(throwable) { "Unhandled exception" }
         exitProcess(1)
     }
 
@@ -35,15 +23,14 @@ fun main() = runBlocking {
 
     try {
 
-        log.info { "🔍 Загрузка конфигурации..." }
+        log.info { "Loading config..." }
         val configLoaded = ConfigManager.loadFromFile()
 
         val configPath = "config.json"
 
         if (!configLoaded) {
-            log.error { "❌ Конфигурация не загружена. Создайте файл config.json" }
-            log.error { "📁 Разместите его в: ${File(".").absolutePath}" }
-            exitProcess(1)  // ✅ Завершаем программу
+            log.error { "Config not found, expected at: ${File(".").absolutePath}/config.json" }
+            exitProcess(1)
         }
 
         // Загрузка конфигурации
@@ -51,34 +38,24 @@ fun main() = runBlocking {
 
         val config = ConfigManager.getConfig()
 
-        log.info { "📊 Загружено бирж: ${config.exchanges.size}" }
+        log.info { "Exchanges loaded: ${config.exchanges.size}" }
         config.exchanges.forEach {
-            log.info { "   • ${it.name}: ${it.symbols.size} пар, enabled=${it.enabled}" }
+            log.info { "  ${it.name}: ${it.symbols.size} pairs (enabled=${it.enabled})" }
         }
 
         // Проверяем что это PostgreSQL
         if (config.database.type.lowercase() != "postgresql") {
-            log.error { "❌ Поддерживается только PostgreSQL. Укажите type='postgresql' в config.json" }
+            log.error { "Unsupported DB type, use type='postgresql' in config.json" }
             exitProcess(1)
         }
 
         // Создаем директории если их нет
         Paths.get(config.export.outputDir).toFile().mkdirs()
 
-        log.info { "═".repeat(60) }
-        log.info { "🚀 Запуск TradeCollectorService v${BuildConfig.VERSION}" }
-        log.info { "📊 Биржи: ${config.exchanges.size}" }
-        config.exchanges.forEach { exchange ->
-            log.info { "   • ${exchange.name}: ${exchange.symbols.size} пар" }
-        }
-        log.info { "📈 Мониторинг: http://localhost:${config.monitoring.httpPort}" }
-        log.info { "💾 База данных: PostgreSQL ${config.database.host}:${config.database.port}/${config.database.database}" }
-        log.info { "🎯 Фильтр: ${config.processor.filterPercentile} перцентиль" }
-        log.info { "📊 Таймфреймы: ${config.processor.timeframes}" }
-        log.info { "═".repeat(60) }
+        log.info { "TradeCollectorService v${BuildConfig.VERSION} | exchanges=${config.exchanges.size} | monitor=:${config.monitoring.httpPort} | db=${config.database.host}:${config.database.port}/${config.database.database} | filter=${config.processor.filterPercentile} | tfs=${config.processor.timeframes}" }
 
         // Инициализация БД
-        log.info { "🔗 Подключение к PostgreSQL..." }
+        log.info { "Connecting to PostgreSQL..." }
         val hikariDataSource = TradeDAO.createDataSource(config.database)
         val dao = TradeDAO(hikariDataSource)
 
@@ -87,12 +64,12 @@ fun main() = runBlocking {
 
         // Обработка сигналов завершения
         val shutdownHook = Thread {
-            log.info { "\n📴 Получен сигнал завершения..." }
+            log.info { "Shutdown signal received" }
             runBlocking {
                 service.stop()
                 dao.shutdown()
             }
-            log.info { "✅ Сервис завершен" }
+            log.info { "Service finished" }
         }
         Runtime.getRuntime().addShutdownHook(shutdownHook)
 
@@ -105,7 +82,7 @@ fun main() = runBlocking {
         }
 
     } catch (e: Throwable) {
-        log.error(e) { "❌ Критическая ошибка при запуске" }
+        log.error(e) { "Fatal startup error" }
         exitProcess(1)
     }
 }

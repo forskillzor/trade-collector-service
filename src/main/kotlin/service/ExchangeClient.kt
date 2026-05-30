@@ -20,7 +20,7 @@ class ExchangeClient(
     private val clientJobs = mutableListOf<Job>()
 
     suspend fun start() {
-        log.info { "🔌 Запуск клиента для ${config.name} (${config.symbols.size} пар)" }
+        log.info { "Client ${config.name}: starting (${config.symbols.size} pairs)" }
 
         config.symbols.forEach { symbol ->
             launchClientForSymbol(symbol)
@@ -52,15 +52,15 @@ class ExchangeClient(
         while (true) {
             try {
                 reconnectAttempts++
-                log.info { "${config.name}/$symbol: Попытка подключения #$reconnectAttempts" }
+                log.info { "${config.name}/$symbol: connect attempt #$reconnectAttempts" }
 
                 client.webSocket(url) {
-                    log.info { "✅ ${config.name}/$symbol: WebSocket подключен" }
+                    log.info { "${config.name}/$symbol: WebSocket connected" }
 
                     // Отправляем подписку если требуется
                     adapter.getSubscribeMessage(symbol)?.let { message ->
                         send(message)
-                        log.debug { "${config.name}/$symbol: Отправлена подписка" }
+                        log.debug { "${config.name}/$symbol: subscribed" }
                     }
 
                     reconnectAttempts = 0
@@ -79,7 +79,7 @@ class ExchangeClient(
                             }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
-                                log.info { "📴 ${config.name}/$symbol: Соединение закрыто: $reason" }
+                                log.info { "${config.name}/$symbol: connection closed ($reason)" }
                                 break
                             }
                             else -> {}
@@ -89,7 +89,7 @@ class ExchangeClient(
             } catch (e: Exception) {
                 val delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
                 log.error(e) {
-                    "❌ ${config.name}/$symbol: Ошибка. Переподключение через ${delayMs/1000}с"
+                    "${config.name}/$symbol: error, reconnecting in ${delayMs / 1000}s"
                 }
                 delay(delayMs)
             }
@@ -108,6 +108,6 @@ class ExchangeClient(
         clients.values.forEach { it.close() }
         clients.clear()
 
-        log.info { "✅ Клиент ${config.name} остановлен" }
+        log.info { "Client ${config.name} stopped" }
     }
 }
