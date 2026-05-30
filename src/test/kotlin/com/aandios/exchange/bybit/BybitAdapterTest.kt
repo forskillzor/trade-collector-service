@@ -1,6 +1,7 @@
 package com.aandios.exchange.bybit
 
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import kotlin.test.*
 
 class BybitAdapterTest {
@@ -14,8 +15,8 @@ class BybitAdapterTest {
         assertEquals("Bybit", trade.exchange)
         assertEquals("BTCUSDT", trade.symbol)
         assertEquals(1704067200000L, trade.timestamp)
-        assertEquals(50000.00, trade.price)
-        assertEquals(1.5, trade.quantity)
+        assertEquals(BigDecimal("50000.00"), trade.price)
+        assertEquals(BigDecimal("1.5"), trade.quantity)
         assertTrue(trade.isBuy)
     }
 

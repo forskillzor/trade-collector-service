@@ -48,7 +48,7 @@ class VolumeFilterProcessor(
         val window = slidingWindows[key]!!
 
         // Добавляем объём в окно
-        val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
+        val volumeUsd = trade.getVolumeUsd()
         window.volumes.add(volumeUsd)
         window.totalTrades++
         window.windowEndTime = trade.timestamp
@@ -160,7 +160,7 @@ class VolumeFilterProcessor(
 
         dao.saveVolumeWindow(volumeWindow)
 
-        log.debug { "Window ${window.exchange}/${window.symbol} | trades=${window.totalTrades} threshold=${volumeThreshold.toDouble()} 98p=${p98Volume.toDouble()}" }
+        log.debug { "Window ${window.exchange}/${window.symbol} | trades=${window.totalTrades} threshold=${volumeThreshold} 98p=${p98Volume}" }
     }
 
     private fun checkAndSaveFilteredTrade(
@@ -197,7 +197,7 @@ class VolumeFilterProcessor(
             // Сохраняем фильтрованную сделку
             dao.insertFilteredTrade(filteredTrade)
 
-            log.info { "Large trade ${trade.exchange}/${trade.symbol} | ${category} vol=${volumeUsd.toDouble()} > threshold=${window.volumeThreshold.toDouble()}" }
+            log.info { "Large trade ${trade.exchange}/${trade.symbol} | ${category} vol=${volumeUsd} > threshold=${window.volumeThreshold}" }
         }
     }
 
@@ -206,7 +206,7 @@ class VolumeFilterProcessor(
             mapOf(
                 "totalTrades" to window.totalTrades,
                 "windowSize" to window.volumes.size,
-                "volumeThreshold" to window.volumeThreshold.toDouble(),
+                "volumeThreshold" to window.volumeThreshold,
                 "processedTrades" to (processedTrades[key] ?: 0L)
             )
         }

@@ -31,8 +31,8 @@ class AggregateProcessor(
         fun addTrade(trade: Trade) {
             totalTicks++
 
-            val price = BigDecimal.valueOf(trade.price)
-            val quantity = BigDecimal.valueOf(trade.quantity)
+            val price = trade.price
+            val quantity = trade.quantity
 
             if (minPrice == null || price < minPrice!!) minPrice = price
             if (maxPrice == null || price > maxPrice!!) maxPrice = price

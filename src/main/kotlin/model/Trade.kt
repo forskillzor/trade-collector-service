@@ -9,8 +9,8 @@ data class Trade(
     val exchange: String,
     val symbol: String,
     val timestamp: Long,
-    val price: Double,
-    val quantity: Double,
+    val price: BigDecimal,
+    val quantity: BigDecimal,
     val isBuy: Boolean
 ) {
     fun toLocalDateTime(): LocalDateTime {
@@ -20,7 +20,7 @@ data class Trade(
         )
     }
 
-    fun getVolumeUsd(): Double = price * quantity
+    fun getVolumeUsd(): BigDecimal = price.multiply(quantity)
 
     companion object {
         fun fromRaw(
@@ -35,8 +35,8 @@ data class Trade(
                 exchange = exchange,
                 symbol = symbol,
                 timestamp = timestamp,
-                price = price.toDouble(),
-                quantity = quantity.toDouble(),
+                price = price,
+                quantity = quantity,
                 isBuy = isBuy
             )
         }

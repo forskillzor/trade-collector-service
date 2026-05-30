@@ -86,8 +86,7 @@ class TradeProcessor(
                 aggregateProcessor.processTrade(trade)
 
                 if (totalTrades % 1000 == 0L) {
-                    val volumeUsd = BigDecimal.valueOf(trade.getVolumeUsd())
-                    log.debug { "tick #$totalTrades | tps=${tradesPerSecond}/s | ${exchange}/${trade.symbol} price=${trade.price} vol=$volumeUsd queue=${stats.batchQueueSize}" }
+                    log.debug { "tick #$totalTrades | tps=${tradesPerSecond}/s | ${exchange}/${trade.symbol} price=${trade.price} vol=${trade.getVolumeUsd()} queue=${stats.batchQueueSize}" }
                 }
 
                 // Периодические операции

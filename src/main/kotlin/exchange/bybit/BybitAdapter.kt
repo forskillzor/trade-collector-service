@@ -2,6 +2,7 @@ package com.aandios.exchange.bybit
 
 import com.aandios.exchange.BaseExchangeAdapter
 import com.aandios.model.Trade
+import java.math.BigDecimal
 
 class BybitAdapter : BaseExchangeAdapter("Bybit") {
     override fun getWebSocketUrl(symbol: String): String {
@@ -29,8 +30,8 @@ class BybitAdapter : BaseExchangeAdapter("Bybit") {
                         exchange = name,
                         symbol = symbol.uppercase(),
                         timestamp = tradeData["T"].asLong(),
-                        price = tradeData["p"].asDouble(),
-                        quantity = tradeData["v"].asDouble(),
+                        price = BigDecimal(tradeData["p"].asText()),
+                        quantity = BigDecimal(tradeData["v"].asText()),
                         isBuy = tradeData["S"].asText() == "Buy"
                     )
                 }

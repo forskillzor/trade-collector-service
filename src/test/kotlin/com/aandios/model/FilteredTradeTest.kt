@@ -17,7 +17,7 @@ class FilteredTradeTest {
 
     @Test
     fun `FilteredTrade with category`() {
-        val trade = Trade("Binance", "BTCUSDT", 1000L, 50000.0, 10.0, true)
+        val trade = Trade("Binance", "BTCUSDT", 1000L, BigDecimal("50000"), BigDecimal("10"), true)
         val ft = FilteredTrade(
             trade = trade,
             volumeUsd = BigDecimal("500000"),
@@ -35,7 +35,7 @@ class FilteredTradeTest {
 
     @Test
     fun `FilteredTrade without category`() {
-        val trade = Trade("Binance", "BTCUSDT", 1000L, 50000.0, 1.0, true)
+        val trade = Trade("Binance", "BTCUSDT", 1000L, BigDecimal("50000"), BigDecimal("1"), true)
         val ft = FilteredTrade(
             trade = trade,
             volumeUsd = BigDecimal("50000"),

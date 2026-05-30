@@ -2,6 +2,7 @@ package com.aandios.exchange.binance
 
 import com.aandios.exchange.BaseExchangeAdapter
 import com.aandios.model.Trade
+import java.math.BigDecimal
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
     override fun getWebSocketUrl(symbol: String): String {
@@ -15,8 +16,8 @@ class BinanceAdapter : BaseExchangeAdapter("Binance") {
                 exchange = name,
                 symbol = symbol.uppercase(),
                 timestamp = node["T"].asLong(),
-                price = node["p"].asDouble(),
-                quantity = node["q"].asDouble(),
+                price = BigDecimal(node["p"].asText()),
+                quantity = BigDecimal(node["q"].asText()),
                 isBuy = !node["m"].asBoolean()
             )
         } catch (e: Exception) {

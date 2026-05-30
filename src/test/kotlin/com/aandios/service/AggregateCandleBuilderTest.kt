@@ -22,25 +22,25 @@ class AggregateCandleBuilderTest {
     @Test
     fun `addTrade tracks min and max price`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 50000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 51000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, 49000.0, 1.0, true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("50000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("51000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, BigDecimal("49000"), BigDecimal("1"), true))
 
-        assertEquals(BigDecimal.valueOf(49000.0), builder.minPrice)
-        assertEquals(BigDecimal.valueOf(51000.0), builder.maxPrice)
+        assertEquals(BigDecimal("49000"), builder.minPrice)
+        assertEquals(BigDecimal("51000"), builder.maxPrice)
         assertEquals(3L, builder.totalTicks)
     }
 
     @Test
     fun `addTrade separates bid and ask volumes`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 50000.0, 2.0, true))  // bid
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 50000.0, 1.0, false)) // ask
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, 50000.0, 3.0, true))  // bid
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("50000"), BigDecimal("2"), true))  // bid
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("50000"), BigDecimal("1"), false)) // ask
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, BigDecimal("50000"), BigDecimal("3"), true))  // bid
 
-        val level = builder.priceLevels[BigDecimal.valueOf(50000.0)]!!
-        assertEquals(BigDecimal.valueOf(5.0), level.bidVolume) // 2.0 + 3.0
-        assertEquals(BigDecimal.valueOf(1.0), level.askVolume) // 1.0
+        val level = builder.priceLevels[BigDecimal("50000")]!!
+        assertEquals(BigDecimal("5"), level.bidVolume) // 2.0 + 3.0
+        assertEquals(BigDecimal("1"), level.askVolume) // 1.0
         assertEquals(2, level.bidCount)
         assertEquals(1, level.askCount)
     }
@@ -48,11 +48,11 @@ class AggregateCandleBuilderTest {
     @Test
     fun `bid and ask counts are independent`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 50000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 50000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, 50000.0, 1.0, false))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("50000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("50000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, BigDecimal("50000"), BigDecimal("1"), false))
 
-        val level = builder.priceLevels[BigDecimal.valueOf(50000.0)]!!
+        val level = builder.priceLevels[BigDecimal("50000")]!!
         assertEquals(2, level.bidCount)
         assertEquals(1, level.askCount)
     }
@@ -60,8 +60,8 @@ class AggregateCandleBuilderTest {
     @Test
     fun `buildPriceLevelsJson produces valid JSON`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 49000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 50000.0, 2.0, false))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("49000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("50000"), BigDecimal("2"), false))
 
         val json = builder.buildPriceLevelsJson()
         assertTrue(json.startsWith("["))
@@ -73,8 +73,8 @@ class AggregateCandleBuilderTest {
     @Test
     fun `buildPriceLevelsJson sorts by price ascending`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 51000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 49000.0, 1.0, true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("51000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("49000"), BigDecimal("1"), true))
 
         val json = builder.buildPriceLevelsJson()
         val pos49000 = json.indexOf("49000")
@@ -97,9 +97,9 @@ class AggregateCandleBuilderTest {
     @Test
     fun `buildAggregate includes correct priceLevels count`() {
         val builder = createBuilder()
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, 50000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, 51000.0, 1.0, true))
-        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, 50000.0, 1.0, false))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200000L, BigDecimal("50000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200001L, BigDecimal("51000"), BigDecimal("1"), true))
+        builder.addTrade(Trade("Binance", "BTCUSDT", 1704067200002L, BigDecimal("50000"), BigDecimal("1"), false))
 
         val aggregate = builder.buildAggregate()
         assertEquals(2, aggregate.priceLevels) // two unique prices: 50000, 51000

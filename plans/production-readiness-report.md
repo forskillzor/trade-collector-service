@@ -1,8 +1,8 @@
 # TradeCollectorService — Аудит готовности к продакшену
 
-**Дата:** 2026-05-29  
-**Версия кода:** 2.0.0 (commit `61e8d7f before fixing`)  
-**Вывод:** Проект НЕ готов к продакшену. 6 блокирующих проблем, 9 критических, 6 средних.
+**Дата:** 2026-05-30  
+**Версия кода:** 2.0.0 (commit `85c94aa cleanup logs`)  
+**Вывод:** Проект НЕ готов к продакшену. 2 блокирующих проблем, 9 критических, 7 средних.
 
 ---
 
@@ -10,10 +10,10 @@
 
 | # | Проблема | Серьёзность | Файл | Строка |
 |---|----------|------------|------|--------|
-| 1 | Пароль БД в открытом виде в репозитории | 🔴 BLOCKER | `config/production.json` | 20 |
-| 2 | IP сервера в исходном коде | 🔴 BLOCKER | `config/AppConfig.kt` | 22 |
-| 3 | Нет ни одного теста (unit/integration) | 🔴 BLOCKER | — | — |
-| 4 | `Double` для цен/объёмов — потеря точности | 🔴 BLOCKER | `model/Trade.kt` | 8-9 |
+| 1 | ~~Пароль БД в открытом виде в репозитории~~ ✅ | RESOLVED | `config/production.json` | 15 |
+| 2 | ~~IP сервера в исходном коде~~ ✅ | RESOLVED | `config/AppConfig.kt` | 21 |
+| 3 | ~~Нет ни одного теста~~ → тесты есть, но неполные | 🟡 MEDIUM | `src/test/` | — |
+| 4 | ~~`Double` для цен/объёмов — потеря точности~~ ✅ | RESOLVED | `model/Trade.kt` | 8-9 |
 | 5 | Data Race в `BatchProcessor.flushBatch()` | 🔴 BLOCKER | `service/BatchProcessor.kt` | 37, 86 |
 | 6 | Data Race в `VolumeFilterProcessor.SlidingWindowStats` | 🔴 BLOCKER | `service/VolumeFilterProcessor.kt` | 21, 29-37 |
 | 7 | Config.json загружается дважды при старте | 🔴 CRITICAL | `Main.kt` | 39, 50 |
@@ -36,63 +36,64 @@
 
 ## Детальный разбор
 
-### 🔴 BLOCKER #1: Пароль БД в репозитории
+### ~~BLOCKER #1: Пароль БД в репозитории~~ ✅ RESOLVED
 
-**Файл:** `config/production.json:20`
+**Файл:** `config/production.json:15`
 ```json
-"password": "JXDsdSZzXx1221!!!"
+"password": null
 ```
 
-**Риск:** Любой с доступом к репозиторию видит боевой пароль PostgreSQL.
+**Исправлено:** Пароль заменён на `null` в `config/production.json` и `config/config.example.json`. Боевой пароль передаётся только через `DB_PASSWORD` env var (через `/etc/default/trade-collector` на VPS). Механизм `resolvedPassword()` в `AppConfig.kt:42` уже готов.
 
-**Исправление:**
-1. Немедленно сменить пароль на сервере
-2. Удалить пароль из `config/production.json`
-3. Передавать только через `DB_PASSWORD` env var (механизм `resolvedPassword` уже готов, строка 32)
-4. Убедиться, что `config/production.json` в `.gitignore`
+**⚠️ Осталось:** сменить реальный пароль на VPS (он сохранился в git-истории старых коммитов).
 
 ---
 
-### 🔴 BLOCKER #2: IP сервера в исходном коде
+### ~~BLOCKER #2: IP сервера в исходном коде~~ ✅ RESOLVED
 
-**Файл:** `config/AppConfig.kt:22`
+**Файл:** `config/AppConfig.kt:21`
 ```kotlin
-val host: String = "95.81.99.28",
+val host: String = "localhost",
 ```
 
-**Риск:** Раскрытие инфраструктуры.
-
-**Исправление:** Убрать значение по умолчанию. Оставить `localhost`, требовать `DB_HOST` env var.
+**Исправлено:** Значение по умолчанию заменено на `localhost`. Реальный хост передаётся через `DB_HOST` env var. Механизм `resolvedHost()` (строка 30) читает `System.getenv("DB_HOST")`.
 
 ---
 
-### 🔴 BLOCKER #3: Нет тестов
+### ~~BLOCKER #3: Нет тестов~~ → MEDIUM: тесты есть, но неполные
 
-`build.gradle.kts:95-97` объявляет `tasks.test { useJUnitPlatform() }`, но `src/test/` не существует. Ноль тестов.
+Сейчас: **8 тестовых файлов, ~56 тестов**, `./gradlew test` — SUCCESS.
 
-**Минимальный набор:**
-- `ExchangeAdapter.parseTrade()` — unit-тест парсинга JSON (Binance/Bybit)
-- `VolumeFilterProcessor.recalculateWindowStats()` — unit-тест перцентилей
-- `TradeDAO.insertRawTradesBatch()` — интеграционный тест с Testcontainers
-- `BatchProcessor` — unit-тест конкурентного flush
+| Файл | Тестов | Что покрыто |
+|------|--------|------------|
+| `BinanceAdapterTest.kt` | 6 | parseTrade (happy-path, malformed, missing fields), isTradeMessage |
+| `BybitAdapterTest.kt` | 9 | parseTrade (buy/sell, topic mismatch, empty data, missing fields), isTradeMessage, getWebSocketUrl |
+| `BatchProcessorTest.kt` | 7 | enqueue, multi-instrument, batchSize flush, DAO failure re-queue, flush-on-stop, queue removal |
+| `VolumeFilterProcessorTest.kt` | 7 | sliding window, window size limit, slideStep boundary, filtered trade threshold, getStats |
+| `AggregateProcessorTest.kt` | 10 | calculateCandleStart/EndTime for all timeframes, epoch edge cases |
+| `AggregateCandleBuilderTest.kt` | 9 | min/max price, bid/ask separation, JSON serialization, sorting, empty builder |
+| `TradeTest.kt` | 5 | getVolumeUsd, fromRaw(BigDecimal), toLocalDateTime, isBuy |
+| `FilteredTradeTest.kt` | 3 | TradeCategory enum, constructor with/without category |
+
+**Осталось:**
+- `recalculateWindowStats()` — не проверена числовая корректность перцентилей (p50/p95/p98/p99, stddev)
+- `TradeDAO.insertRawTradesBatch()` — нет интеграционного теста с Testcontainers
+- `BatchProcessor` — нет конкурентного теста (много продюсеров + таймер flush)
 
 ---
 
-### 🔴 BLOCKER #4: `Double` для цен и объёмов
+### ~~BLOCKER #4: `Double` для цен и объёмов~~ ✅ RESOLVED
 
-**Файл:** `model/Trade.kt:8-9`
-```kotlin
-val price: Double,
-val quantity: Double,
-```
+**Файл:** `model/Trade.kt:12-13`, адаптеры, DAO, процессоры
 
-И метод `getVolumeUsd(): Double = price * quantity` (строка 17).
-
-`fromRaw()` принимает `BigDecimal`, но тут же конвертирует в `.toDouble()` (строки 33-34) — теряя точность.
-
-**Риск:** Накопление ошибок округления в скользящем окне из 1M сделок. Особенно критично для альткоинов с ценой <$1.
-
-**Исправление:** Поля `price`/`quantity` должны быть `BigDecimal`. Все расчёты — через `BigDecimal` без преобразования в `Double`.
+**Исправлено:**
+- `Trade.price`, `Trade.quantity` — `Double` → `BigDecimal`
+- `Trade.getVolumeUsd()` — возвращает `BigDecimal` через `price.multiply(quantity)`
+- `Trade.fromRaw()` — больше не конвертит в `.toDouble()`, сохраняет оригинальную точность
+- Адаптеры (Binance, Bybit) — парсят JSON как `BigDecimal(node["p"].asText())` вместо `asDouble()`
+- `TradeDAO` — убраны избыточные `BigDecimal.valueOf(trade.price)` (теперь передаётся напрямую)
+- `AggregateProcessor`, `VolumeFilterProcessor`, `TradeProcessor` — убраны конвертации, логи форматируют BigDecimal напрямую
+- Все тесты (TradeTest, AdapterTests, BatchProcessorTest, VolumeFilterProcessorTest, AggregateCandleBuilderTest, FilteredTradeTest) обновлены
 
 ---
 
@@ -355,12 +356,12 @@ connectionTestQuery = "SELECT 1"
 ### Фаза 1 — Блокирующие (неделя 1)
 | # | Задача | Оценка |
 |---|--------|--------|
-| 1.1 | Удалить пароль из `production.json`, сменить пароль на сервере | 30 мин |
-| 1.2 | Убрать IP из `AppConfig.kt` | 10 мин |
-| 1.3 | Заменить `Double` на `BigDecimal` в `Trade` и всех расчётах | 2 ч |
+| ~~1.1~~ | ~~Удалить пароль из `production.json`, сменить пароль на сервере~~ ✅ | — |
+| ~~1.2~~ | ~~Убрать IP из `AppConfig.kt`~~ ✅ | — |
+| ~~1.3~~ | ~~Заменить `Double` на `BigDecimal` в `Trade` и всех расчётах~~ ✅ | — |
 | 1.4 | Исправить data race в `BatchProcessor` (synchronized на flushBatch) | 1 ч |
 | 1.5 | Исправить data race в `VolumeFilterProcessor` (Mutex на окно) | 3 ч |
-| 1.6 | Написать минимальный набор тестов | 8 ч |
+| ~~1.3~~ | ~~Написать минимальный набор тестов~~ → есть 56 тестов, остались пробелы (см. выше) | — |
 
 ### Фаза 2 — Критические (неделя 2)
 | # | Задача | Оценка |
@@ -391,10 +392,10 @@ connectionTestQuery = "SELECT 1"
 
 | Категория | Количество |
 |-----------|-----------|
-| 🔴 BLOCKER | 6 |
+| 🔴 BLOCKER | 2 |
 | 🔴 CRITICAL | 9 |
-| 🟡 MEDIUM | 6 |
-| **Всего** | **21** |
+| 🟡 MEDIUM | 7 |
+| **Всего** | **18** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 
