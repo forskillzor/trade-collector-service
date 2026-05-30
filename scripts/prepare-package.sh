@@ -23,19 +23,22 @@ echo "Using JAR file: $JAR_FILE (size: $(stat -c%s "$JAR_FILE") bytes)"
 cp "$JAR_FILE" deploy-package/trade-collector.jar
 echo "✅ JAR copied"
 
-# 3. Копируем конфиг
-echo "📄 Copying config.json..."
-if [ -f "config.json" ]; then
+# 3. Копируем продакшен-конфиг как config.json
+echo "📄 Copying config/production.json..."
+if [ -f "config/production.json" ]; then
+    cp config/production.json deploy-package/config.json
+    echo "✅ config/production.json → config.json"
+elif [ -f "config.json" ]; then
     cp config.json deploy-package/
-    echo "✅ config.json copied"
+    echo "⚠️ config/production.json not found, using config.json (dev config)"
 else
-    echo "❌ ERROR: config.json not found!"
+    echo "❌ ERROR: No config file found!"
     exit 1
 fi
 
 # 4. Копируем ОБЯЗАТЕЛЬНЫЕ скрипты для сервера
 echo "📄 Copying server scripts..."
-MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "verify-deployment.sh")
+MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "backup-db.sh" "verify-deployment.sh")
 
 for script in "${MANDATORY_SCRIPTS[@]}"; do
     if [ -f "scripts/$script" ]; then

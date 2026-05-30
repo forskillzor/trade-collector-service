@@ -1,132 +1,126 @@
 #!/bin/bash
 set -e
+VERSION="${1:?Usage: $0 v1.0.0}"
+APP_DIR="/opt/trade-collector"
+RELEASE_DIR="$APP_DIR/releases/$VERSION"
+HEALTH_URL="http://localhost:8080/health"
+HEALTH_RETRIES=10
+HEALTH_DELAY=3
 
-echo "=== REMOTE DEPLOYMENT STARTED ==="
+echo "═"$(printf '═%.0s' {1..50})
+echo "📦 Deploying $VERSION"
+echo "═"$(printf '═%.0s' {1..50})
 
-# Проверяем обязательные переменные
-if [ -z "$DB_PASSWORD" ]; then
-    echo "❌ ERROR: DB_PASSWORD is not set"
+# --- 1. Проверить архив -------------------------------------------------------
+ARCHIVE="/tmp/trade-collector-$VERSION.tar.gz"
+if [ ! -f "$ARCHIVE" ]; then
+    echo "❌ Архив не найден: $ARCHIVE"
     exit 1
 fi
 
-# Параметры
-APP_NAME='trade-collector'
-APP_USER='deploy'
-APP_DIR="/opt/$APP_NAME"
+if ! tar -tzf "$ARCHIVE" >/dev/null 2>&1; then
+    echo "❌ Архив повреждён: $ARCHIVE"
+    exit 1
+fi
+echo "✅ Архив проверен: $(du -h "$ARCHIVE" | cut -f1)"
 
-echo "📦 Deploying from: $(pwd)"
-echo "📁 App dir: $APP_DIR"
-echo "🏠 Database: ${DB_HOST:-localhost}:${DB_PORT:-6432}/${DB_NAME:-trade_collector}"
+# --- 2. Загрузить переменные БД -----------------------------------------------
+if [ -f /etc/default/trade-collector ]; then
+    set -a
+    source /etc/default/trade-collector
+    set +a
+fi
 
-# 1. Проверяем, что файлы уже загружены в текущей директории
-echo "🔍 Checking required files in current directory..."
+if [ -z "$DB_PASSWORD" ]; then
+    echo "❌ DB_PASSWORD не найден в /etc/default/trade-collector"
+    exit 1
+fi
+echo "✅ Конфигурация БД загружена"
 
-REQUIRED_FILES=("trade-collector.jar" "config.json" "trade-collector.service" "run.sh" "init-database.sh")
+# --- 3. Бэкап БД --------------------------------------------------------------
+if [ "${SKIP_BACKUP:-false}" != "true" ] && [ -f "$APP_DIR/backup-db.sh" ]; then
+    echo "💾 Создаю бэкап БД..."
+    bash "$APP_DIR/backup-db.sh" || echo "⚠️ Бэкап не удался, продолжаю..."
+else
+    echo "⏭️ Бэкап пропущен (SKIP_BACKUP=$SKIP_BACKUP)"
+fi
 
-for file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$file" ]; then
-        echo "❌ ERROR: Required file $file not found in $(pwd)"
-        echo "📁 Files available:"
-        ls -la
+# --- 4. Запомнить предыдущую версию -------------------------------------------
+PREV_VERSION=""
+if [ -L "$APP_DIR/current" ]; then
+    PREV_VERSION=$(readlink "$APP_DIR/current" | xargs basename 2>/dev/null || echo "")
+    echo "📋 Предыдущая версия: $PREV_VERSION"
+else
+    echo "📋 Первый деплой (нет предыдущей версии)"
+fi
+
+# --- 5. Распаковать в releases/$VERSION ---------------------------------------
+echo "📂 Распаковка в $RELEASE_DIR..."
+mkdir -p "$RELEASE_DIR"
+tar -xzf "$ARCHIVE" -C "$RELEASE_DIR"
+chmod +x "$RELEASE_DIR"/*.sh 2>/dev/null || true
+echo "✅ Файлы распакованы"
+
+# --- 6. Остановить сервис -----------------------------------------------------
+echo "🛑 Останавливаю сервис..."
+systemctl stop trade-collector.service 2>/dev/null || true
+sleep 2
+
+# --- 7. Создать структуру если первый деплой ----------------------------------
+mkdir -p "$APP_DIR/releases" "$APP_DIR/backups" "$APP_DIR/logs"
+cp "$APP_DIR/backup-db.sh" "$APP_DIR/backup-db.sh" 2>/dev/null || true
+
+# --- 8. Атомарно переключить symlink ------------------------------------------
+echo "🔗 Переключаю symlink: current → releases/$VERSION"
+ln -sfn "releases/$VERSION" "$APP_DIR/current"
+
+# --- 9. Применить миграции БД -------------------------------------------------
+if [ -f "$RELEASE_DIR/init-database.sh" ]; then
+    echo "🗄️ Применяю миграции БД..."
+    cd "$RELEASE_DIR"
+    bash init-database.sh || echo "⚠️ Миграции не применились, продолжаю..."
+fi
+
+# --- 10. Запустить сервис -----------------------------------------------------
+echo "🚀 Запускаю сервис..."
+systemctl start trade-collector.service
+
+# --- 11. Health check с повторными попытками ----------------------------------
+echo "🏥 Проверяю здоровье сервиса..."
+for i in $(seq 1 $HEALTH_RETRIES); do
+    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+        echo "✅ Health check OK (попытка $i)"
+        break
+    fi
+
+    if [ "$i" -eq "$HEALTH_RETRIES" ]; then
+        echo "❌ Health check провален после $HEALTH_RETRIES попыток"
+
+        if [ -n "$PREV_VERSION" ] && [ -d "$APP_DIR/releases/$PREV_VERSION" ]; then
+            echo "🔙 Откатываю на $PREV_VERSION..."
+            systemctl stop trade-collector.service 2>/dev/null || true
+            ln -sfn "releases/$PREV_VERSION" "$APP_DIR/current"
+            systemctl start trade-collector.service
+
+            if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+                echo "✅ Откат на $PREV_VERSION успешен"
+            else
+                echo "❌ Откат тоже провалился! Требуется ручное вмешательство."
+            fi
+        fi
         exit 1
     fi
+
+    sleep $HEALTH_DELAY
 done
 
-echo "✅ All required files found"
+# --- 12. Очистка старых версий ------------------------------------------------
+echo "🧹 Чищу старые релизы (оставляю 3 последних)..."
+ls -dt "$APP_DIR"/releases/*/ 2>/dev/null | tail -n +4 | while read old; do
+    echo "   Удаляю: $old"
+    rm -rf "$old"
+done
 
-# Проверяем размер JAR
-JAR_SIZE=$(stat -c%s trade-collector.jar 2>/dev/null || stat -f%z trade-collector.jar 2>/dev/null || echo 0)
-if [ $JAR_SIZE -lt 1000000 ]; then
-    echo "❌ ERROR: JAR file is too small! ($JAR_SIZE bytes)"
-    echo "Expected ~35MB, got $((JAR_SIZE/1024/1024))MB"
-    echo "File might be corrupted"
-    exit 1
-fi
-
-echo "✅ JAR file size: $((JAR_SIZE/1024/1024))MB"
-
-# 2. Устанавливаем Java если нужно
-echo "📦 Checking Java..."
-if ! command -v java &> /dev/null; then
-    echo "Installing Java 21..."
-    sudo apt-get update
-    sudo apt-get install -y openjdk-21-jre-headless
-elif ! java -version 2>&1 | grep -q '"21'; then
-    echo "⚠️ Java 21 not found, installing..."
-    sudo apt-get update
-    sudo apt-get install -y openjdk-21-jre-headless
-fi
-
-# 3. Создаем пользователя если нужно
-if ! id "$APP_USER" &>/dev/null; then
-    echo "👤 Creating user $APP_USER..."
-    sudo useradd -m -s /bin/bash "$APP_USER" || true
-fi
-
-# 4. Создаем директории
-echo "📁 Creating directories..."
-sudo mkdir -p "$APP_DIR" "/var/log/$APP_NAME"
-sudo mkdir -p "$APP_DIR/backups"
-
-# 6. Останавливаем сервис
-echo "🛑 Stopping service..."
-sudo systemctl stop "$APP_NAME.service" 2>/dev/null || true
-
-# 7. Копируем файлы
-echo "📄 Copying files..."
-sudo cp -v trade-collector.jar config.json "$APP_DIR/"
-sudo cp -v trade-collector.service run.sh init-database.sh "$APP_DIR/"
-sudo cp -v 001_init_schema.sql "$APP_DIR/001_init_schema.sql"
-
-# 8. Создаем environment файл
-echo "🔒 Creating environment file..."
-sudo tee /etc/default/trade-collector > /dev/null << EOF
-# Database configuration
-DB_PASSWORD='$DB_PASSWORD'
-DB_HOST='${DB_HOST:-localhost}'
-DB_PORT='${DB_PORT:-6432}'
-DB_USER='${DB_USER:-trade_user}'
-DB_NAME='${DB_NAME:-trade_collector}'
-
-# Application
-JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-EOF
-
-sudo chown root:deploy /etc/default/trade-collector
-sudo chmod 640 /etc/default/trade-collector
-
-# 9. Устанавливаем права
-echo "🔐 Setting permissions..."
-sudo chown -R "$APP_USER:$APP_USER" "$APP_DIR" "/var/log/$APP_NAME"
-sudo chmod 755 "$APP_DIR" "/var/log/$APP_NAME"
-sudo chmod 755 "$APP_DIR/run.sh" "$APP_DIR/init-database.sh"
-sudo chmod 644 "$APP_DIR/trade-collector.jar" "$APP_DIR/config.json" 2>/dev/null || true
-
-# 10. Настраиваем systemd сервис
-echo "⚙️ Configuring systemd service..."
-sudo cp "$APP_DIR/trade-collector.service" /etc/systemd/system/
-echo "✅ Service file copied to /etc/systemd/system/"
-
-# 11. Инициализируем базу данных (если нужно)
-if [ -n "$DB_PASSWORD" ] && [ -f "$APP_DIR/init-database.sh" ]; then
-    echo "🗄️ Initializing database..."
-    sudo chmod +x "$APP_DIR/init-database.sh"
-    cd "$APP_DIR"
-    export DB_PASSWORD DB_HOST DB_PORT DB_USER DB_NAME
-    sudo -u deploy ./init-database.sh
-fi
-
-# 12. Перезагружаем и запускаем сервис
-echo "🔄 Reloading systemd..."
-sudo systemctl daemon-reload
-sudo systemctl enable "$APP_NAME.service"
-
-echo "🚀 Starting service..."
-sudo systemctl start "$APP_NAME.service"
-
-# 13. Проверяем статус
-echo "📊 Checking service status..."
-sleep 3
-sudo systemctl status "$APP_NAME.service" --no-pager -l
-
-echo "=== DEPLOYMENT COMPLETED SUCCESSFULLY ==="
+echo "═"$(printf '═%.0s' {1..50})
+echo "✅ Деплой $VERSION завершён успешно"
+echo "═"$(printf '═%.0s' {1..50})

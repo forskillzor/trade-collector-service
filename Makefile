@@ -1,7 +1,7 @@
 .PHONY: help dev-up dev-down dev-run dev-restart test lint build clean db-init db-reset
 
 DOCKER := $(shell command -v docker 2>/dev/null)
-COMPOSE := docker-compose
+COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
 # ===== ЛОКАЛЬНАЯ РАЗРАБОТКА =====
 

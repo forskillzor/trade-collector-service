@@ -6,6 +6,10 @@ on:
         description: 'Release tag (e.g. v1.0.0)'
         required: true
         type: string
+      skip_backup:
+        description: 'Skip DB backup'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -30,8 +34,7 @@ jobs:
           TAG="${{ github.event.inputs.tag_version }}"
           ARCHIVE="trade-collector-${TAG}.tar.gz"
           echo "🔍 Downloading asset: $ARCHIVE"
-          
-          # Используем более простой подход через cURL
+
           curl -sL \
             -H "Accept: application/octet-stream" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -42,68 +45,35 @@ jobs:
                 "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
                 | jq -r '.assets[] | select(.name == "'"$ARCHIVE"'") | .id' \
             )"
-          
-          # Проверяем, что файл скачался
+
           if [ ! -s "/tmp/$ARCHIVE" ]; then
             echo "❌ Failed to download archive or file is empty"
             exit 1
           fi
-          
-          echo "✅ Archive downloaded successfully ($(ls -lh /tmp/$ARCHIVE | awk '{print $5}'))"
-          
-          # Проверяем что это tar.gz
+
+          echo "✅ Archive downloaded ($(ls -lh /tmp/$ARCHIVE | awk '{print $5}'))"
+
           if ! tar -tzf "/tmp/$ARCHIVE" >/dev/null 2>&1; then
             echo "❌ Downloaded file is NOT a valid .tar.gz!"
-            echo "File type: $(file "/tmp/$ARCHIVE")"
             exit 1
           fi
-          
+
           echo "✅ Archive is valid tar.gz"
 
       - name: 📤 Copy to VPS and deploy
         run: |
           TAG="${{ github.event.inputs.tag_version }}"
           ARCHIVE="trade-collector-${TAG}.tar.gz"
-          
+
           echo "🚀 Copying $ARCHIVE to VPS..."
           scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no "/tmp/$ARCHIVE" \
             $VPS_USER@$VPS_HOST:/tmp/
-          
-          echo "🔧 Deploying on VPS..."
-          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
-          set -e
-          echo "📦 Starting deployment..."
-          
-          TAG="${{ github.event.inputs.tag_version }}"
-          ARCHIVE="trade-collector-${TAG}.tar.gz"
-          
-          # Создаем рабочую директорию
-          DEPLOY_DIR="/tmp/trade-collector-deploy-$(date +%Y%m%d%H%M%S)"
-          mkdir -p "$DEPLOY_DIR"
-          cd "$DEPLOY_DIR"
-        
-          # Распаковываем архив
-          echo "📂 Extracting archive..."
-          echo "archive is /tmp/$ARCHIVE"
-        
-          tar -xzf "/tmp/$ARCHIVE"
-        
-          # Экспортируем переменные окружения
-          export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-          export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
-          export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
-          export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
-          export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
-        
-          echo "🔧 Running deploy-remote.sh..."
-          echo "DB_HOST: $DB_HOST"
-          echo "DB_PORT: $DB_PORT"
-          echo "DB_USER: $DB_USER"
-          echo "DB_NAME: $DB_NAME"
-        
-          # Делаем скрипт исполняемым и запускаем
-          chmod +x deploy-remote.sh
-          ./deploy-remote.sh
-        
-          echo "✅ Deployment completed successfully!"
-          EOF
+
+          echo "🔧 Running deploy-remote.sh on VPS..."
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
+            "SKIP_BACKUP=${{ github.event.inputs.skip_backup }} cd /opt/trade-collector && bash deploy-remote.sh $TAG"
+
+      - name: ✅ Verify deployment
+        run: |
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
+            "curl -sf http://localhost:8080/health && echo 'Health OK'"

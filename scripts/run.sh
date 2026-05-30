@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /opt/trade-collector
+cd /opt/trade-collector/current
 
 echo "🚀 Starting Trade Collector Service..."
 

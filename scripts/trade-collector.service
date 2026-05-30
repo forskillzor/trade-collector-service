@@ -7,12 +7,9 @@ Wants=network.target
 Type=simple
 User=deploy
 Group=deploy
-WorkingDirectory=/opt/trade-collector
-
-# КРИТИЧЕСКИ ВАЖНО: загружаем переменные из файла
-EnvironmentFile=/etc/default/trade-collector
-
-ExecStart=/opt/trade-collector/run.sh
+WorkingDirectory=/opt/trade-collector/current
+...
+ExecStart=/opt/trade-collector/current/run.sh
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

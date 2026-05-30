@@ -12,7 +12,7 @@
     "port": 5432,
     "database": "trade_collector",
     "username": "trade_user",
-    "password": "JXDsdSZzXx1221!!!",
+    "password": null,
     "batchSize": 5000,
     "flushIntervalMs": 500
   },
