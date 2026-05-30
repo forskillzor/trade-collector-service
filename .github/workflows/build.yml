@@ -33,6 +33,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Run tests
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+
       - name: Build shadowJar
         run: |
           chmod +x gradlew

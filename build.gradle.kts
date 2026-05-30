@@ -88,3 +88,11 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 }
+
+dependencies {
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.assertj:assertj-core:3.25.3")
+    testImplementation(kotlin("test"))
+}
