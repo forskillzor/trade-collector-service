@@ -575,28 +575,28 @@ systemctl restart trade-collector
 ## 9. План внедрения
 
 ### Этап 1: Локальная разработка (30 мин)
-- [ ] Создать `docker-compose.yml`
-- [ ] Создать `config/config.example.json` (без паролей)
-- [ ] Добавить `config/config.json` в `.gitignore`
-- [ ] Создать `Makefile`
+- [x] Создать `docker-compose.yml`
+- [x] Создать `config/config.example.json` (без паролей)
+- [x] Добавить `config/config.json` в `.gitignore`
+- [x] Создать `Makefile`
 - [ ] Проверить: `make dev-up && make dev-run`
 
 ### Этап 2: Исправить SQL и скрипты (30 мин)
-- [ ] Убрать `DROP TABLE` из `001_init_schema.sql`
-- [ ] Создать `scripts/backup-db.sh`
-- [ ] Создать `scripts/reset-database.sh`
-- [ ] Исправить `run.sh` (убрать скачивание драйвера, увеличить Xmx)
+- [x] Убрать `DROP TABLE` из `001_init_schema.sql`
+- [x] Создать `scripts/backup-db.sh`
+- [x] Создать `scripts/reset-database.sh`
+- [x] Исправить `run.sh` (убрать скачивание драйвера, увеличить Xmx)
 
 ### Этап 3: Атомарный деплой (1 час)
-- [ ] Переписать `deploy-remote.sh` (symlink-подход)
-- [ ] Исправить `prepare-package.sh` (путь к конфигу)
+- [x] Переписать `deploy-remote.sh` (symlink-подход)
+- [x] Исправить `prepare-package.sh` (путь к конфигу)
 - [ ] Создать структуру директорий на VPS (`releases/`, `backups/`)
 
 ### Этап 4: CI/CD (1 час)
-- [ ] Создать `.github/workflows/ci.yml` (push → test)
-- [ ] Переименовать `build.yml` → `release.yml`, добавить deploy job
-- [ ] Убрать `DB_PASSWORD` из CI (только на сервере)
-- [ ] Удалить `deploy.yml` (объединён с release.yml)
+- [x] Создать `.github/workflows/ci.yml` (push → test)
+- [x] Переименовать `build.yml` → `release.yml`, добавить deploy job
+- [x] Убрать `DB_PASSWORD` из CI (только на сервере)
+- [x] Удалить `deploy.yml` (объединён с release.yml)
 
 ### Этап 5: Валидация (30 мин)
 - [ ] `make test` локально

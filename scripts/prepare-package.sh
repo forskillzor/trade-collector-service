@@ -59,6 +59,12 @@ if [ -f "sql/001_init_schema.sql" ]; then
     echo "✅ SQL schema copied"
 fi
 
+# reset-database.sh (только для ручного сброса БД на VPS, не запускается автоматически)
+if [ -f "scripts/reset-database.sh" ]; then
+    cp "scripts/reset-database.sh" deploy-package/
+    echo "✅ reset-database.sh copied (manual use only)"
+fi
+
 # 6. Создаем файл README с инструкцией
 cat > deploy-package/README.md << 'EOF'
 # Trade Collector Deployment Package
