@@ -18,17 +18,17 @@
 
 | # | Проблема | Где |
 |---|----------|-----|
-| 1 | `prepare-package.sh:30` копирует `config.json`, а реальный конфиг — `config/production.json` | build |
-| 2 | `deploy.yml:92` — `DB_PASSWORD` в SSH heredoc, виден в логах GitHub Actions | deploy |
-| 3 | `deploy-remote.sh` требует `config.json` в пакете, а не `production.json` | deploy |
-| 4 | `init-database.sh` вызывает `DROP TABLE IF EXISTS raw_trades CASCADE` из `001_init_schema.sql` — удаляет все данные | deploy |
+| 1 | ~~`prepare-package.sh:30` копирует `config.json`, а реальный конфиг — `config/production.json`~~ ✅ Исправлено (берёт production.json) | build |
+| 2 | ~~`deploy.yml:92` — `DB_PASSWORD` в SSH heredoc, виден в логах GitHub Actions~~ ✅ Исправлено (deploy-remote.sh читает /etc/default) | deploy |
+| 3 | ~~`deploy-remote.sh` требует `config.json` в пакете, а не `production.json`~~ ✅ Исправлено (prepare-package копирует production.json → config.json) | deploy |
+| 4 | ~~`init-database.sh` вызывает `DROP TABLE IF EXISTS raw_trades CASCADE`~~ ✅ Исправлено (убрали DROP, только CREATE TABLE IF NOT EXISTS) | deploy |
 | 5 | ~~run.sh пытается скачать PostgreSQL драйвер отдельно — не нужно, он уже в shadowJar~~ ✅ Исправлено | runtime |
 | 6 | ~~`run.sh:72` — `Xmx512m` мало для Arrow (off-heap не лимитируется)~~ ✅ Arrow удалён, Xmx512m теперь достаточно | runtime |
 | 7 | ~~Dockerfile использует GraalVM native-image — несовместим с Arrow/JNI~~ ✅ Удалён (docker не нужен) | docker |
-| 8 | Нет локального dev-окружения (docker-compose для PostgreSQL) | dev |
-| 9 | Нет шага тестов в CI (`./gradlew test` не вызывается) | CI |
-| 10 | Деплой не атомарный — при ошибке сервис остаётся в сломанном состоянии | deploy |
-| 11 | Нет бэкапа данных перед пересозданием БД | deploy |
+| 8 | ~~Нет локального dev-окружения (docker-compose для PostgreSQL)~~ ✅ Сделано (Makefile + docker-compose.yml + config.example) | dev |
+| 9 | ~~Нет шага тестов в CI~~ ✅ Добавлен `./gradlew test` в build.yml + 7 тестовых классов | CI |
+| 10 | ~~Деплой не атомарный — при ошибке сервис остаётся в сломанном состоянии~~ ✅ Исправлено (symlink + health-check + rollback) | deploy |
+| 11 | ~~Нет бэкапа данных перед пересозданием БД~~ ✅ Добавлен backup-db.sh (pg_dump в backups/) | deploy |
 
 ---
 
