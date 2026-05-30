@@ -16,7 +16,7 @@
 | 4 | ~~`Double` для цен/объёмов — потеря точности~~ ✅ | RESOLVED | `model/Trade.kt` | 8-9 |
 | 5 | ~~Data Race в `BatchProcessor.flushBatch()`~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 37, 86 |
 | 6 | ~~Data Race в `VolumeFilterProcessor.SlidingWindowStats`~~ ✅ | RESOLVED | `service/VolumeFilterProcessor.kt` | 21, 29-37 |
-| 7 | Config.json загружается дважды при старте | 🔴 CRITICAL | `Main.kt` | 39, 50 |
+| 7 | ~~Config.json загружается дважды при старте~~ ✅ | RESOLVED | `Main.kt` | 27, 37 |
 | 8 | Resource leak: `ExchangeClient` создаёт `CoroutineScope` на символ | 🔴 CRITICAL | `service/ExchangeClient.kt` | 42 |
 | 9 | Apache Arrow — утечка off-heap памяти | 🔴 CRITICAL | `service/AggregateProcessor.kt` | 94 |
 | 10 | `filtered_trades` — одиночные INSERT вместо batch | 🔴 CRITICAL | `service/VolumeFilterProcessor.kt` | 215 |
@@ -113,20 +113,11 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 CRITICAL #7: Config загружается дважды
+### ~~CRITICAL #7: Config загружается дважды~~ ✅ RESOLVED
 
-**Файл:** `Main.kt:39,50`
-```kotlin
-val configLoaded = ConfigManager.loadFromFile()       // загрузка 1 — поиск по 6 путям
-// ...
-ConfigManager.loadFromFile(configPath)                 // загрузка 2 — только "config.json"
-```
+**Файл:** `Main.kt:27`
 
-Первый вызов ищет config.json по 6 путям и парсит его. Второй вызов ищет только `"config.json"` от текущей директории. Если первый нашёл файл, а второй — нет, `config.exchanges` станет пустым списком (дефолт `emptyList()`). Сервис запустится без бирж.
-
-Плюс `configPath = "config.json"`, но реальный файл называется `config/production.json`. Конфиг вообще не загрузится, если не создать `config.json` в корне.
-
-**Исправление:** Убрать дублирующийся вызов. Передавать путь `config/production.json` в `ConfigManager`.
+**Исправлено:** Убран дублирующий вызов `ConfigManager.loadFromFile(configPath)` (строка 37). Остался только один вызов с поиском по 6 путям, результат проверяется, после чего сразу `getConfig()`.
 
 ---
 
