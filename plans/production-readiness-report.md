@@ -2,7 +2,7 @@
 
 **Дата:** 2026-05-30  
 **Версия кода:** 2.0.0 (commit `85c94aa cleanup logs`)  
-**Вывод:** Проект НЕ готов к продакшену. 2 блокирующих проблем, 9 критических, 7 средних.
+**Вывод:** Проект НЕ готов к продакшену. 0 блокирующих, 9 критических, 7 средних.
 
 ---
 
@@ -14,8 +14,8 @@
 | 2 | ~~IP сервера в исходном коде~~ ✅ | RESOLVED | `config/AppConfig.kt` | 21 |
 | 3 | ~~Нет ни одного теста~~ → тесты есть, но неполные | 🟡 MEDIUM | `src/test/` | — |
 | 4 | ~~`Double` для цен/объёмов — потеря точности~~ ✅ | RESOLVED | `model/Trade.kt` | 8-9 |
-| 5 | Data Race в `BatchProcessor.flushBatch()` | 🔴 BLOCKER | `service/BatchProcessor.kt` | 37, 86 |
-| 6 | Data Race в `VolumeFilterProcessor.SlidingWindowStats` | 🔴 BLOCKER | `service/VolumeFilterProcessor.kt` | 21, 29-37 |
+| 5 | ~~Data Race в `BatchProcessor.flushBatch()`~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 37, 86 |
+| 6 | ~~Data Race в `VolumeFilterProcessor.SlidingWindowStats`~~ ✅ | RESOLVED | `service/VolumeFilterProcessor.kt` | 21, 29-37 |
 | 7 | Config.json загружается дважды при старте | 🔴 CRITICAL | `Main.kt` | 39, 50 |
 | 8 | Resource leak: `ExchangeClient` создаёт `CoroutineScope` на символ | 🔴 CRITICAL | `service/ExchangeClient.kt` | 42 |
 | 9 | Apache Arrow — утечка off-heap памяти | 🔴 CRITICAL | `service/AggregateProcessor.kt` | 94 |
@@ -97,54 +97,19 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 BLOCKER #5: Data Race в `BatchProcessor`
+### ~~BLOCKER #5: Data Race в `BatchProcessor`~~ ✅ RESOLVED
 
-**Файл:** `service/BatchProcessor.kt:37,86`
+**Файл:** `service/BatchProcessor.kt:60`
 
-```kotlin
-fun addTrade(trade: Trade) {
-    // ...
-    if (queue.size >= batchSize) {
-        flushBatch(key)     // вызов из потока WebSocket (строка 37)
-    }
-}
-
-private suspend fun processBatchLoop() {
-    while (isRunning) {
-        delay(flushIntervalMs)
-        tradeQueues.keys.forEach { key ->
-            flushBatch(key)  // вызов из корутины-таймера (строка 86)
-        }
-    }
-}
-```
-
-`flushBatch()` вызывается из двух мест без синхронизации. Оба делают `queue.poll()` — возможна потеря трейда (два вызова одновременно забрали один и тот же элемент) или двойная вставка.
-
-**Исправление:** Добавить `synchronized` на `flushBatch()`, либо убрать немедленный flush из `addTrade()` и полагаться только на таймер.
+**Исправлено:** `flushBatch()` обёрнут в `synchronized(tradeQueues) { ... }`. Все вызовы (из `addTrade()` и `processBatchLoop()`) теперь сериализованы — исключена гонка на `poll()`/`remove()`.
 
 ---
 
-### 🔴 BLOCKER #6: Data Race в `VolumeFilterProcessor`
+### ~~BLOCKER #6: Data Race в `VolumeFilterProcessor`~~ ✅ RESOLVED
 
-**Файл:** `service/VolumeFilterProcessor.kt:21, 29-37`
+**Файл:** `service/VolumeFilterProcessor.kt:22, 36`
 
-```kotlin
-private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>()
-
-data class SlidingWindowStats(
-    var volumes: LinkedList<BigDecimal> = LinkedList(),
-    var sortedVolumes: MutableList<BigDecimal> = mutableListOf(),
-    var totalTrades: Int = 0,
-    var volumeThreshold: BigDecimal = BigDecimal.ZERO
-)
-```
-
-`ConcurrentHashMap` защищает только операции put/get с самой мапой. Поля внутри `SlidingWindowStats` — `var` с изменяемыми коллекциями — модифицируются без синхронизации. При одновременном `processTrade()` (пишет) и `recalculateWindowStats()` (читает/сортирует) — гонка.
-
-**Исправление:** 
-1. Сделать `SlidingWindowStats` иммутабельным (data class без `var`)
-2. Обернуть доступ к каждому окну в `Mutex` на ключ инструмента
+**Исправлено:** Добавлен per-instrument lock через `ConcurrentHashMap<String, Any>`. Весь `processTrade()` обёрнут в `synchronized(lock) { ... }`. Гонка на `var`-полях и изменяемых коллекциях внутри `SlidingWindowStats` устранена.
 
 ---
 
@@ -359,8 +324,8 @@ connectionTestQuery = "SELECT 1"
 | ~~1.1~~ | ~~Удалить пароль из `production.json`, сменить пароль на сервере~~ ✅ | — |
 | ~~1.2~~ | ~~Убрать IP из `AppConfig.kt`~~ ✅ | — |
 | ~~1.3~~ | ~~Заменить `Double` на `BigDecimal` в `Trade` и всех расчётах~~ ✅ | — |
-| 1.4 | Исправить data race в `BatchProcessor` (synchronized на flushBatch) | 1 ч |
-| 1.5 | Исправить data race в `VolumeFilterProcessor` (Mutex на окно) | 3 ч |
+| ~~1.4~~ | ~~Исправить data race в `BatchProcessor` (synchronized на flushBatch)~~ ✅ | — |
+| ~~1.5~~ | ~~Исправить data race в `VolumeFilterProcessor` (Mutex на окно)~~ ✅ (synchronized per-instrument) | — |
 | ~~1.3~~ | ~~Написать минимальный набор тестов~~ → есть 56 тестов, остались пробелы (см. выше) | — |
 
 ### Фаза 2 — Критические (неделя 2)
@@ -392,10 +357,10 @@ connectionTestQuery = "SELECT 1"
 
 | Категория | Количество |
 |-----------|-----------|
-| 🔴 BLOCKER | 2 |
+| 🔴 BLOCKER | 0 |
 | 🔴 CRITICAL | 9 |
 | 🟡 MEDIUM | 7 |
-| **Всего** | **18** |
+| **Всего** | **16** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 

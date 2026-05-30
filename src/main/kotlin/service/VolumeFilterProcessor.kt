@@ -19,6 +19,7 @@ class VolumeFilterProcessor(
 ) {
     private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>() // ключ: "exchange_symbol"
     private val processedTrades = ConcurrentHashMap<String, Long>() // для отслеживания прогресса
+    private val windowLocks = ConcurrentHashMap<String, Any>() // per-instrument синхронизация
 
     data class SlidingWindowStats(
         val exchange: String,
@@ -34,38 +35,41 @@ class VolumeFilterProcessor(
 
     fun processTrade(trade: Trade) {
         val key = "${trade.exchange}_${trade.symbol}"
+        val lock = windowLocks.getOrPut(key) { Any() }
 
-        // Инициализируем окно если нужно
-        if (!slidingWindows.containsKey(key)) {
-            slidingWindows[key] = SlidingWindowStats(
-                exchange = trade.exchange,
-                symbol = trade.symbol,
-                windowStartTime = trade.timestamp
-            )
-            processedTrades[key] = 0L
-        }
+        synchronized(lock) {
+            // Инициализируем окно если нужно
+            if (!slidingWindows.containsKey(key)) {
+                slidingWindows[key] = SlidingWindowStats(
+                    exchange = trade.exchange,
+                    symbol = trade.symbol,
+                    windowStartTime = trade.timestamp
+                )
+                processedTrades[key] = 0L
+            }
 
-        val window = slidingWindows[key]!!
+            val window = slidingWindows[key]!!
 
-        // Добавляем объём в окно
-        val volumeUsd = trade.getVolumeUsd()
-        window.volumes.add(volumeUsd)
-        window.totalTrades++
-        window.windowEndTime = trade.timestamp
+            // Добавляем объём в окно
+            val volumeUsd = trade.getVolumeUsd()
+            window.volumes.add(volumeUsd)
+            window.totalTrades++
+            window.windowEndTime = trade.timestamp
 
-        // Поддерживаем размер окна
-        if (window.volumes.size > windowSize) {
-            window.volumes.removeFirst()
-            window.startIndex++
-        }
+            // Поддерживаем размер окна
+            if (window.volumes.size > windowSize) {
+                window.volumes.removeFirst()
+                window.startIndex++
+            }
 
-        // Обновляем обработанные сделки
-        processedTrades[key] = processedTrades[key]!! + 1
+            // Обновляем обработанные сделки
+            processedTrades[key] = processedTrades[key]!! + 1
 
-        // Проверяем нужно ли сдвинуть окно и пересчитать статистику
-        if (shouldRecalculateWindow(key)) {
-            recalculateWindowStats(window)
-            checkAndSaveFilteredTrade(trade, window, volumeUsd)
+            // Проверяем нужно ли сдвинуть окно и пересчитать статистику
+            if (shouldRecalculateWindow(key)) {
+                recalculateWindowStats(window)
+                checkAndSaveFilteredTrade(trade, window, volumeUsd)
+            }
         }
     }
 

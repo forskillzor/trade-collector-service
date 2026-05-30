@@ -57,7 +57,7 @@ class BatchProcessor(
         }
     }
 
-    private fun flushBatch(key: String) {
+    private fun flushBatch(key: String) = synchronized(tradeQueues) {
         val queue = tradeQueues[key] ?: return
         val batch = mutableListOf<Trade>()
 
