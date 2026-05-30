@@ -63,7 +63,6 @@ fun main() = runBlocking {
         }
 
         // Создаем директории если их нет
-        Paths.get(config.processor.aggregatesOutputDir).toFile().mkdirs()
         Paths.get(config.export.outputDir).toFile().mkdirs()
 
         log.info { "═".repeat(60) }

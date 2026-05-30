@@ -22,9 +22,9 @@
 | 2 | `deploy.yml:92` — `DB_PASSWORD` в SSH heredoc, виден в логах GitHub Actions | deploy |
 | 3 | `deploy-remote.sh` требует `config.json` в пакете, а не `production.json` | deploy |
 | 4 | `init-database.sh` вызывает `DROP TABLE IF EXISTS raw_trades CASCADE` из `001_init_schema.sql` — удаляет все данные | deploy |
-| 5 | `run.sh` пытается скачать PostgreSQL драйвер отдельно — не нужно, он уже в shadowJar | runtime |
-| 6 | `run.sh:72` — `Xmx512m` мало для Arrow (off-heap не лимитируется) | runtime |
-| 7 | Dockerfile использует GraalVM native-image — несовместим с Arrow/JNI | docker |
+| 5 | ~~run.sh пытается скачать PostgreSQL драйвер отдельно — не нужно, он уже в shadowJar~~ ✅ Исправлено | runtime |
+| 6 | ~~`run.sh:72` — `Xmx512m` мало для Arrow (off-heap не лимитируется)~~ ✅ Arrow удалён, Xmx512m теперь достаточно | runtime |
+| 7 | ~~Dockerfile использует GraalVM native-image — несовместим с Arrow/JNI~~ ✅ Удалён (docker не нужен) | docker |
 | 8 | Нет локального dev-окружения (docker-compose для PostgreSQL) | dev |
 | 9 | Нет шага тестов в CI (`./gradlew test` не вызывается) | CI |
 | 10 | Деплой не атомарный — при ошибке сервис остаётся в сломанном состоянии | deploy |
@@ -226,7 +226,6 @@ db-reset:    ## Сбросить БД с сохранением бэкапа
 ├── backups/
 │   └── backup-20260529-120000.sql.gz
 ├── data/
-│   └── aggregates/               # Arrow-файлы (пока не переехали на JSONB)
 └── logs/
 ```
 

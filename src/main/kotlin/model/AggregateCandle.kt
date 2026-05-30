@@ -15,7 +15,6 @@ data class AggregateCandle(
     val priceLevels: Int
 )
 
-// Структура Arrow файла
 data class PriceLevelData(
     val price: BigDecimal,
     var bidVolume: BigDecimal = BigDecimal.ZERO, // объём на bid

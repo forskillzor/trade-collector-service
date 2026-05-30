@@ -27,8 +27,7 @@
     "windowSize": 100000,
     "slideStep": 10000,
     "filterPercentile": 0.98,
-    "timeframes": ["1m", "5m", "1h"],
-    "aggregatesOutputDir": "./aggregates"
+    "timeframes": ["1m", "5m", "1h"]
   },
   "export": {
     "enabled": false,

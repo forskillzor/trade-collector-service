@@ -53,7 +53,6 @@ package "Storage" as Storage {
 package "External Libraries" as Libs {
   [Ktor Client] <<WebSocket>> as KtorClient
   [Ktor Server (Ktor + Jetty)] <<HTTP>> as KtorServer
-  [Apache Arrow] <<Library>> as Arrow
   [HikariCP] <<Library>> as HikariCP
   [Jackson] <<JSON>> as Jackson
   [Kotlinx Coroutines] <<Concurrency>> as Coroutines
@@ -98,8 +97,7 @@ TradeProcessor --> AggregateProcessor : sends to >
 
 BatchProcessor --> TradeDAO : persists raw >
 VolumeFilterProcessor --> TradeDAO : persists filtered/wins >
-AggregateProcessor --> TradeDAO : persists agg >
-AggregateProcessor --> Arrow : serializes to >
+AggregateProcessor --> TradeDAO : persists agg (JSONB) >
 
 MonitoringServer --> TradeProcessor : gets metrics >
 MonitoringServer --> TradeDAO : gets stats >
@@ -130,7 +128,7 @@ VolumeWindows <--> TradeDAO : CRUD >
 Aggregates <--> TradeDAO : CRUD >
 
 ' Notes
-note right of AggregateProcessor : Processes trades into\nprice level candles\nand saves as Arrow files
+note right of AggregateProcessor : Processes trades into\nprice level candles\nand saves as JSONB in PostgreSQL
 note right of VolumeFilterProcessor : Calculates sliding window\npercentiles and filters\n'whale' trades
 note right of BatchProcessor : Batches raw trades\nfor efficient DB insertion
 note bottom of MonitoringServer : Provides HTTP API\nfor health, metrics,\nand status

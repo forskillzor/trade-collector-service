@@ -213,7 +213,7 @@ class TradeDAO(
         }
     }
 
-    // ========== AGGREGATES (ARROW FILES) ==========
+    // ========== AGGREGATES (JSONB) ==========
 
     fun saveAggregate(aggregate: AggregateCandle) {
         dataSource.connection.use { conn ->

@@ -120,6 +120,21 @@ CREATE TABLE IF NOT EXISTS volume_windows
 );
 
 
+-- Триггер для автоматического обновления updated_at в aggregates
+CREATE OR REPLACE FUNCTION update_aggregates_updated_at()
+    RETURNS TRIGGER AS
+$$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_aggregates_updated_at
+    BEFORE UPDATE ON aggregates
+    FOR EACH ROW
+EXECUTE FUNCTION update_aggregates_updated_at();
+
 -- Функция для очистки старых raw_trades (храним только 1 миллион последних сделок)
 CREATE OR REPLACE FUNCTION cleanup_old_raw_trades()
     RETURNS INTEGER AS
@@ -161,7 +176,3 @@ CREATE INDEX IF NOT EXISTS idx_filtered_trades_window_time
 
 CREATE INDEX IF NOT EXISTS idx_volume_windows_time_range
     ON volume_windows (start_time, end_time);
-
--- Для быстрого поиска по времени в raw_trades
-CREATE INDEX IF NOT EXISTS idx_raw_trades_exchange_symbol_time
-    ON raw_trades (exchange, symbol, timestamp DESC);

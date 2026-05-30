@@ -4,11 +4,6 @@
       "name": "Binance",
       "symbols": ["btcusdt", "ethusdt", "solusdt", "adausdt", "dotusdt"],
       "enabled": true
-    },
-    {
-      "name": "Bybit",
-      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ADAUSDT", "DOTUSDT"],
-      "enabled": true
     }
   ],
   "database": {
@@ -27,8 +22,7 @@
     "windowSize": 1000000,
     "slideStep": 100000,
     "filterPercentile": 0.98,
-    "timeframes": ["1m", "5m", "15m", "1h", "4h"],
-    "aggregatesOutputDir": "/var/lib/trade-collector/aggregates"
+    "timeframes": ["1m", "5m", "15m", "1h", "4h"]
   },
   "export": {
     "enabled": true,

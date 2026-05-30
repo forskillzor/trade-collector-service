@@ -5,7 +5,6 @@
       "symbols": ["ltcusdt"],
       "enabled": true
     }
-
   ],
   "database": {
     "type": "postgresql",

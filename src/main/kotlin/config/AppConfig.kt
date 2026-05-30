@@ -57,8 +57,7 @@ data class ProcessorConfig(
     val windowSize: Int = 1000000,
     val slideStep: Int = 100000,
     val filterPercentile: Double = 0.98,
-    val timeframes: List<String> = listOf("1m", "5m", "1h"),
-    val aggregatesOutputDir: String = "./aggregates"
+    val timeframes: List<String> = listOf("1m", "5m", "1h")
 )
 
 @Serializable
