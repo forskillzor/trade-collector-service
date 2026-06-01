@@ -9,6 +9,8 @@ import java.time.Instant
 import kotlinx.coroutines.*
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 private val log = KotlinLogging.logger {}
 
@@ -33,9 +35,9 @@ class TradeProcessor(
     private val adapterCache = mutableMapOf<String, ExchangeAdapter>()
 
     data class InstrumentStats(
-        var totalTrades: Long = 0,
-        var lastTradeTime: Long = 0,
-        var batchQueueSize: Int = 0
+        val totalTrades: AtomicLong = AtomicLong(0),
+        val lastTradeTime: AtomicLong = AtomicLong(0),
+        val batchQueueSize: AtomicInteger = AtomicInteger(0)
     )
 
     fun initialize(scope: CoroutineScope) {
@@ -72,12 +74,12 @@ class TradeProcessor(
                 // Инициализация статистики инструмента
                 val instrumentKey = "${exchange}_${symbol}"
                 val stats = instrumentStats.getOrPut(instrumentKey) { InstrumentStats() }
-                stats.totalTrades++
-                stats.lastTradeTime = System.currentTimeMillis()
+                stats.totalTrades.incrementAndGet()
+                stats.lastTradeTime.set(System.currentTimeMillis())
 
                 // 1. Сохраняем в raw_trades (батчами)
                 batchProcessor.addTrade(trade)
-                stats.batchQueueSize = batchProcessor.getQueueSize(instrumentKey)
+                stats.batchQueueSize.set(batchProcessor.getQueueSize(instrumentKey))
 
                 // 2. Обрабатываем для фильтрации больших сделок
                 volumeFilterProcessor.processTrade(trade)
