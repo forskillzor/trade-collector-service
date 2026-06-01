@@ -17,9 +17,10 @@ class ExchangeClient(
 ) {
     private val adapter = ExchangeAdapterFactory.createAdapter(config.name)
     private val clients = mutableMapOf<String, HttpClient>()
-    private val clientJobs = mutableListOf<Job>()
+    private var clientScope: CoroutineScope? = null
 
     suspend fun start() {
+        clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         log.info { "Client ${config.name}: starting (${config.symbols.size} pairs)" }
 
         config.symbols.forEach { symbol ->
@@ -39,10 +40,11 @@ class ExchangeClient(
 
         clients[symbol] = client
 
-        val job = CoroutineScope(Dispatchers.IO).launch {
-            connectAndListen(url, symbol, client)
+        clientScope?.let { scope ->
+            scope.launch {
+                connectAndListen(url, symbol, client)
+            }
         }
-        clientJobs.add(job)
     }
 
     private suspend fun connectAndListen(url: String, symbol: String, client: HttpClient) {
@@ -102,8 +104,8 @@ class ExchangeClient(
     }
 
     suspend fun stop() {
-        clientJobs.forEach { it.cancel() }
-        clientJobs.clear()
+        clientScope?.cancel()
+        clientScope = null
 
         clients.values.forEach { it.close() }
         clients.clear()
