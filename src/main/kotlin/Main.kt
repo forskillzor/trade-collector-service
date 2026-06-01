@@ -25,7 +25,7 @@ fun main() = runBlocking {
     try {
 
         log.info { "Loading config..." }
-        val configLoaded = ConfigManager.loadFromFile()
+        val configLoaded = ConfigManager.loadFromEnv()
 
         if (!configLoaded) {
             log.error { "Config not found, expected at: ${File(".").absolutePath}/config.json" }

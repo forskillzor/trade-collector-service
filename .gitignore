@@ -45,8 +45,6 @@ bin/
 .DS_Store
 
 ### Project ###
-config.json
-config/development.json
 .env
 *.log
 logs/

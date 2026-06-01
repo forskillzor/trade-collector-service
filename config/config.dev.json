@@ -2,8 +2,13 @@
   "exchanges": [
     {
       "name": "Binance",
-      "symbols": ["btcusdt", "ethusdt", "solusdt", "adausdt", "dotusdt"],
+      "symbols": ["btcusdt", "ethusdt", "solusdt"],
       "enabled": true
+    },
+    {
+      "name": "Bybit",
+      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+      "enabled": false
     }
   ],
   "database": {
@@ -13,25 +18,26 @@
     "database": "trade_collector",
     "username": "trade_user",
     "password": null,
-    "batchSize": 5000,
-    "flushIntervalMs": 500
+    "batchSize": 1000,
+    "flushIntervalMs": 1000
   },
   "processor": {
-    "batchSize": 5000,
-    "flushIntervalMs": 500,
-    "windowSize": 1000000,
-    "slideStep": 100000,
+    "batchSize": 1000,
+    "flushIntervalMs": 1000,
+    "windowSize": 100000,
+    "slideStep": 10000,
     "filterPercentile": 0.98,
-    "timeframes": ["1m", "5m", "15m", "1h", "4h"]
+    "timeframes": ["1m", "5m", "1h"]
   },
   "export": {
-    "enabled": true,
+    "enabled": false,
     "intervalMinutes": 60,
-    "outputDir": "/var/lib/trade-collector/exports",
-    "keepDays": 30
+    "outputDir": "./exports",
+    "keepDays": 7
   },
   "monitoring": {
     "httpPort": 8080,
+    "host": "localhost",
     "enableMetrics": true,
     "metricsPath": "/metrics",
     "healthPath": "/health",

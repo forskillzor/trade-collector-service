@@ -71,6 +71,7 @@ data class ExportConfig(
 @Serializable
 data class MonitoringConfig(
     val httpPort: Int = 8080,
+    val host: String = "0.0.0.0",
     val enableMetrics: Boolean = true,
     val metricsPath: String = "/metrics",
     val healthPath: String = "/health",
@@ -167,4 +168,13 @@ object ConfigManager {
     }
 
     fun getConfig(): AppConfig = config
+
+    fun loadFromEnv(): Boolean {
+        val path = when (System.getenv("APP_ENV")?.lowercase()) {
+            "production" -> "config/config.prod.json"
+            else -> "config/config.dev.json"
+        }
+        val finalPath = System.getenv("CONFIG_PATH") ?: path
+        return loadFromFile(finalPath)
+    }
 }

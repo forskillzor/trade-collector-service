@@ -23,7 +23,7 @@
 | 11 | ~~Data Race в `TradeProcessor.InstrumentStats`~~ ✅ | RESOLVED | `service/TradeProcessor.kt` | 37-41 |
 | 12 | ~~Нет Circuit Breaker для PostgreSQL~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 12-61 |
 | 13 | ~~Graceful shutdown без таймаутов~~ ✅ | RESOLVED | `service/ShutdownChain.kt` | — |
-| 14 | `MonitoringServer` слушает только localhost | 🔴 CRITICAL | `service/MonitoringServer.kt` | 34 |
+| 14 | ~~`MonitoringServer` слушает только localhost~~ ✅ | RESOLVED | `service/MonitoringServer.kt` | 22 |
 | 15 | HikariCP без leak-detection и keepalive | 🔴 CRITICAL | `storage/postgres/TradeDAO.kt` | 21-37 |
 | 16 | t-digest добавлен, но не используется | 🟡 MEDIUM | `service/VolumeFilterProcessor.kt` | 93 |
 | 17 | Exposed ORM + kotlin-csv — неиспользуемые зависимости | 🟡 MEDIUM | `build.gradle.kts` | 66-69, 86 |
@@ -199,16 +199,19 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 CRITICAL #14: MonitoringServer только на localhost
+### ~~CRITICAL #14: MonitoringServer только на localhost~~ ✅ RESOLVED
 
-**Файл:** `service/MonitoringServer.kt:34`
-```kotlin
-val engine = embeddedServer(Jetty, port = port, host = "localhost") {
-```
+**Файл:** `service/MonitoringServer.kt:22, 35`, `config/AppConfig.kt:73`, `config/config.dev.json`, `config/config.prod.json`
 
-В Docker/K8s healthcheck и Prometheus не достучатся.
+**Было:** `host = "localhost"` захардкожен — в Docker/K8s healthcheck и Prometheus не достучались.
 
-**Исправление:** Сделать host конфигурируемым (`0.0.0.0` для контейнеров).
+**Исправлено:**
+- `MonitoringConfig` получил поле `host: String = "0.0.0.0"`
+- `MonitoringServer` принимает `host` параметром, пробрасывается из конфига через `TradeCollectorService`
+- `config.dev.json`: `"host": "localhost"` (локальная разработка)
+- `config.prod.json`: `"host": "0.0.0.0"` (контейнеры, внешний доступ)
+- Добавлен `ConfigManager.loadFromEnv()` — выбирает конфиг по `APP_ENV` (dev/production)
+- `.gitignore` очищен от `config.json` и `config/development.json`
 
 ---
 
@@ -316,7 +319,7 @@ connectionTestQuery = "SELECT 1"
 | ~~2.5~~ | ~~Atomic-поля в `InstrumentStats`~~ ✅ | — |
 | ~~2.6~~ | ~~Circuit Breaker для БД~~ ✅ | — |
 | ~~2.7~~ | ~~Таймауты в graceful shutdown~~ ✅ | — |
-| 2.8 | `0.0.0.0` для MonitoringServer | 15 мин |
+| ~~2.8~~ | ~~`0.0.0.0` для MonitoringServer~~ ✅ | — |
 | 2.9 | HikariCP: leakDetection + keepalive + validation | 15 мин |
 
 ### Фаза 3 — Средние (неделя 3)
@@ -336,9 +339,9 @@ connectionTestQuery = "SELECT 1"
 | Категория | Количество |
 |-----------|-----------|
 | 🔴 BLOCKER | 0 |
-| 🔴 CRITICAL | 3 |
+| 🔴 CRITICAL | 2 |
 | 🟡 MEDIUM | 7 |
-| **Всего** | **10** |
+| **Всего** | **9** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 

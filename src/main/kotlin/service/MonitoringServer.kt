@@ -19,6 +19,7 @@ private val json = Json { prettyPrint = true }
 
 class MonitoringServer(
     private val port: Int = 8080,
+    private val host: String = "0.0.0.0",
     private val tradeProcessor: TradeProcessor,
     private val tradeDAO: TradeDAO,
 ) {
@@ -31,7 +32,7 @@ class MonitoringServer(
         serverJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Создаем сервер
-                val engine = embeddedServer(Jetty, port = port, host = "localhost") {
+                val engine = embeddedServer(Jetty, port = port, host = host) {
                     install(ContentNegotiation) { json(json) }
 
                     routing {

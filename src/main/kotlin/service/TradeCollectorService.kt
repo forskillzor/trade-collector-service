@@ -46,6 +46,7 @@ class TradeCollectorService(
             if (config.monitoring.enableMetrics) {
                 monitoringServer = MonitoringServer(
                     port = config.monitoring.httpPort,
+                    host = config.monitoring.host,
                     tradeProcessor = tradeProcessor!!,
                     tradeDAO = dao,
                 )
