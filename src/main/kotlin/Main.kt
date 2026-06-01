@@ -1,6 +1,7 @@
 package com.aandios
 
 import com.aandios.config.ConfigManager
+import com.aandios.service.ShutdownChain
 import com.aandios.service.TradeCollectorService
 import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
@@ -61,8 +62,10 @@ fun main() = runBlocking {
         val shutdownHook = Thread {
             log.info { "Shutdown signal received" }
             runBlocking {
-                service.stop()
-                dao.shutdown()
+                ShutdownChain()
+                    .step("Service", 60_000) { service.stop() }
+                    .step("DAO", 15_000) { dao.shutdown() }
+                    .execute()
             }
             log.info { "Service finished" }
         }

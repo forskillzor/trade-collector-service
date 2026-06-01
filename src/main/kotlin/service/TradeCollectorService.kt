@@ -93,21 +93,14 @@ class TradeCollectorService(
 
         log.info { "Stopping TradeCollectorService..." }
 
-        // Остановка процессора
-        tradeProcessor?.shutdown()
-
-        // Остановка клиентов
-        exchangeClients.forEach { client ->
-            try {
-                client.stop()
-            } catch (e: Exception) {
-                log.error(e) { "Client stop error" }
+        ShutdownChain()
+            .step("TradeProcessor", 30_000) { tradeProcessor?.shutdown() }
+            .step("ExchangeClients", 15_000) {
+                exchangeClients.forEach { client -> client.stop() }
+                exchangeClients.clear()
             }
-        }
-        exchangeClients.clear()
-
-        // Остановка мониторинга
-        monitoringServer?.stop()
+            .step("MonitoringServer", 5_000) { monitoringServer?.stop() }
+            .execute()
 
         // Отмена задач
         serviceJob?.cancel()
