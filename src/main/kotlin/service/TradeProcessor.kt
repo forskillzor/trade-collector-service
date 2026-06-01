@@ -16,7 +16,9 @@ private val log = KotlinLogging.logger {}
 
 class TradeProcessor(
     private val dao: TradeDAO,
-    private val config: ProcessorConfig = ProcessorConfig()
+    private val config: ProcessorConfig = ProcessorConfig(),
+    private val diskBuffer: DiskBuffer? = null,
+    private val deadLetterQueue: DeadLetterQueue? = null
 ) {
     private lateinit var batchProcessor: BatchProcessor
     private lateinit var volumeFilterProcessor: VolumeFilterProcessor
@@ -44,7 +46,7 @@ class TradeProcessor(
         this.coroutineScope = scope
 
         // Инициализация компонентов
-        batchProcessor = BatchProcessor(dao, config.batchSize, config.flushIntervalMs)
+        batchProcessor = BatchProcessor(dao, config.batchSize, config.flushIntervalMs, diskBuffer)
         batchProcessor.start(scope)
 
         volumeFilterProcessor = VolumeFilterProcessor(
@@ -105,6 +107,7 @@ class TradeProcessor(
             }
         } catch (e: Exception) {
             log.error(e) { "Process error: $exchange/$symbol" }
+            deadLetterQueue?.push(json, exchange, symbol, e.message ?: "unknown")
         }
     }
 

@@ -30,8 +30,12 @@ class TradeCollectorService(
 
             coroutineScope = CoroutineScope(Dispatchers.Default)
 
+            val dataDir = config.export.outputDir + "/buffer"
+            val diskBuffer = DiskBuffer(dataDir)
+            val deadLetterQueue = DeadLetterQueue(dataDir)
+
             // Инициализация процессора
-            tradeProcessor = TradeProcessor(dao, config.processor)
+            tradeProcessor = TradeProcessor(dao, config.processor, diskBuffer, deadLetterQueue)
             tradeProcessor!!.initialize(coroutineScope!!)
 
             // Создание клиентов для бирж
@@ -49,6 +53,7 @@ class TradeCollectorService(
                     host = config.monitoring.host,
                     tradeProcessor = tradeProcessor!!,
                     tradeDAO = dao,
+                    exchangeClients = exchangeClients,
                 )
                 monitoringServer?.start()
             }

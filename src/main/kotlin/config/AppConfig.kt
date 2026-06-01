@@ -1,7 +1,6 @@
 package com.aandios.config
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import java.io.File
@@ -45,10 +44,6 @@ data class DatabaseConfig(
             "Database password not configured! Set DB_PASSWORD environment variable or in config.json"
         )
 
-    // Для логирования (без пароля)
-    fun getConnectionStringSafe(): String {
-        return "postgresql://${resolvedUsername}@${resolvedHost}:${resolvedPort}/${resolvedDatabase}"
-    }
 }
 @Serializable
 data class ProcessorConfig(
@@ -135,36 +130,6 @@ object ConfigManager {
             log.error(e) { "Config parse error" }
             false
         }
-    }
-
-    private fun createDefaultConfig(): AppConfig {
-        return AppConfig(
-            exchanges = listOf(
-                ExchangeConfig(
-                    name = "Binance",
-                    symbols = listOf("btcusdt", "ethusdt", "solusdt"),
-                    enabled = true
-                ),
-                ExchangeConfig(
-                    name = "Bybit",
-                    symbols = listOf("BTCUSDT", "ETHUSDT", "SOLUSDT"),
-                    enabled = true
-                )
-            ),
-            database = DatabaseConfig(
-                type = "postgresql",
-                host = "localhost",
-                port = 6432,
-                database = "trade_collector",
-                username = "trade_user",
-                password = "your_password_here",
-                batchSize = 1000,
-                flushIntervalMs = 1000
-            ),
-            processor = ProcessorConfig(),
-            export = ExportConfig(),
-            monitoring = MonitoringConfig()
-        )
     }
 
     fun getConfig(): AppConfig = config

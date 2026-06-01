@@ -58,32 +58,15 @@ dependencies {
     implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
     implementation("ch.qos.logback:logback-classic:1.4.11")
 
-    // Database
-    implementation("org.xerial:sqlite-jdbc:3.45.1.0")
-    implementation("org.jetbrains.exposed:exposed-core:0.44.0")
-    implementation("org.jetbrains.exposed:exposed-dao:0.44.0")
-    implementation("org.jetbrains.exposed:exposed-jdbc:0.44.0")
-    implementation("org.jetbrains.exposed:exposed-java-time:0.44.0")
-
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3")
+    //Database
+    implementation("org.postgresql:postgresql:42.7.1")
 
     // HikariCP
     implementation("com.zaxxer:HikariCP:6.0.0")
 
-    //Postgres
-    implementation("org.postgresql:postgresql:42.7.1")
-
-    // Utils
-    implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.9.2")
-
     // t-Digest
     implementation("com.tdunning:t-digest:3.3")
 }
-
-
-
 
 tasks.test {
     useJUnitPlatform()

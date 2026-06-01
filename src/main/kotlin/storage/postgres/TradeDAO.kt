@@ -414,6 +414,20 @@ class TradeDAO(
         }
     }
 
+    fun ping(): Boolean {
+        return try {
+            dataSource.connection.use { conn ->
+                conn.prepareStatement("SELECT 1").use { stmt ->
+                    stmt.executeQuery().use { it.next() }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            log.warn(e) { "DB ping failed" }
+            false
+        }
+    }
+
     fun shutdown() {
         dataSource.close()
     }

@@ -7,7 +7,6 @@ import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
 import kotlinx.coroutines.*
 import kotlin.system.exitProcess
-import java.nio.file.Paths
 import java.io.File
 
 private val log = KotlinLogging.logger {}
@@ -44,9 +43,6 @@ fun main() = runBlocking {
             log.error { "Unsupported DB type, use type='postgresql' in config.json" }
             exitProcess(1)
         }
-
-        // Создаем директории если их нет
-        Paths.get(config.export.outputDir).toFile().mkdirs()
 
         log.info { "TradeCollectorService v${BuildConfig.VERSION} | exchanges=${config.exchanges.size} | monitor=:${config.monitoring.httpPort} | db=${config.database.host}:${config.database.port}/${config.database.database} | filter=${config.processor.filterPercentile} | tfs=${config.processor.timeframes}" }
 

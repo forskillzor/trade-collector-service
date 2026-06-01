@@ -2,6 +2,7 @@ package com.aandios.service
 
 import com.aandios.model.*
 import com.aandios.storage.postgres.TradeDAO
+import com.tdunning.math.stats.MergingDigest
 import mu.KotlinLogging
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -28,7 +29,9 @@ class VolumeFilterProcessor(
         val symbol: String,
         var startIndex: Long = 0,
         var volumes: LinkedList<BigDecimal> = LinkedList(),
-        var sortedVolumes: MutableList<BigDecimal> = mutableListOf(),
+        var sum: BigDecimal = BigDecimal.ZERO,
+        var sumSquared: BigDecimal = BigDecimal.ZERO,
+        var digest: MergingDigest? = null,
         var totalTrades: Int = 0,
         var windowStartTime: Long = 0,
         var windowEndTime: Long = 0,
@@ -55,12 +58,16 @@ class VolumeFilterProcessor(
             // Добавляем объём в окно
             val volumeUsd = trade.getVolumeUsd()
             window.volumes.add(volumeUsd)
+            window.sum = window.sum.add(volumeUsd)
+            window.sumSquared = window.sumSquared.add(volumeUsd.multiply(volumeUsd))
             window.totalTrades++
             window.windowEndTime = trade.timestamp
 
             // Поддерживаем размер окна
             if (window.volumes.size > windowSize) {
-                window.volumes.removeFirst()
+                val removed = window.volumes.removeFirst()
+                window.sum = window.sum.subtract(removed)
+                window.sumSquared = window.sumSquared.subtract(removed.multiply(removed))
                 window.startIndex++
             }
 
@@ -83,68 +90,47 @@ class VolumeFilterProcessor(
     private fun recalculateWindowStats(window: SlidingWindowStats) {
         if (window.volumes.isEmpty()) return
 
-        // Копируем и сортируем объёмы
-        window.sortedVolumes = window.volumes.sorted().toMutableList()
+        val size = window.volumes.size
+        val n = BigDecimal(size)
 
-        // Рассчитываем статистику
-        val size = window.sortedVolumes.size
+        // Build t-digest
+        val digest = MergingDigest(100.0)
+        window.volumes.forEach { digest.add(it.toDouble()) }
+        window.digest = digest
 
-        // Базовые статистики
-        val minVolume = window.sortedVolumes.first()
-        val maxVolume = window.sortedVolumes.last()
-        val sumVolume = window.sortedVolumes.sumOf { it }
-        val avgVolume = sumVolume.divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
+        // Statistics from running sums
+        val minVolume = window.volumes.min()
+        val maxVolume = window.volumes.max()
+        val avgVolume = window.sum.divide(n, 8, RoundingMode.HALF_UP)
 
-        // Медиана
-        val medianVolume = if (size % 2 == 0) {
-            val mid = size / 2
-            window.sortedVolumes[mid - 1].add(window.sortedVolumes[mid])
-                .divide(BigDecimal.valueOf(2), 8, RoundingMode.HALF_UP)
-        } else {
-            window.sortedVolumes[size / 2]
-        }
+        // Median from t-digest
+        val medianVolume = BigDecimal.valueOf(digest.quantile(0.5))
 
-        // Стандартное отклонение
-        val variance = window.sortedVolumes
-            .map { value ->
-                val diff = value.subtract(avgVolume)
-                diff.multiply(diff)  // diff²
-            }
-            .fold(BigDecimal.ZERO) { acc, value -> acc.add(value) }
-            .divide(BigDecimal(size), 8, RoundingMode.HALF_UP)
-
-        val stddevVolume = try {
-            if (variance >= BigDecimal.ZERO) {
-                BigDecimal.valueOf(kotlin.math.sqrt(variance.toDouble()))
-            } else {
-                BigDecimal.ZERO
-            }
+        // Standard deviation from running sums: Var = E[X²] - E[X]²
+        val variance = try {
+            val meanSquared = avgVolume.multiply(avgVolume)
+            val meanOfSquares = window.sumSquared.divide(n, 8, RoundingMode.HALF_UP)
+            val v = meanOfSquares.subtract(meanSquared)
+            if (v >= BigDecimal.ZERO) v else BigDecimal.ZERO
         } catch (e: Exception) {
             BigDecimal.ZERO
         }
 
-        if (size == 0) {
-            log.warn { "Empty window for ${window.exchange}/${window.symbol}" }
-            return
+        val stddevVolume = try {
+            BigDecimal.valueOf(sqrt(variance.toDouble()))
+        } catch (e: Exception) {
+            BigDecimal.ZERO
         }
 
-        // Перцентили
-        val p50Index = (size * 0.5).toInt().coerceAtMost(size - 1)
-        val p95Index = (size * 0.95).toInt().coerceAtMost(size - 1)
-        val p98Index = (size * filterPercentile).toInt().coerceAtMost(size - 1)
-        val p99Index = (size * 0.99).toInt().coerceAtMost(size - 1)
+        // Percentiles from t-digest
+        val p50Volume = BigDecimal.valueOf(digest.quantile(0.5))
+        val p95Volume = BigDecimal.valueOf(digest.quantile(0.95))
+        val p98Volume = BigDecimal.valueOf(digest.quantile(filterPercentile))
+        val p99Volume = BigDecimal.valueOf(digest.quantile(0.99))
 
-        val p50Volume = window.sortedVolumes[p50Index]
-        val p95Volume = window.sortedVolumes[p95Index]
-        val p98Volume = window.sortedVolumes[p98Index]
-        val p99Volume = window.sortedVolumes[p99Index]
-
-        // Порог фильтрации
-        val thresholdIndex = (size * filterPercentile).toInt().coerceAtMost(size - 1)
-        val volumeThreshold = window.sortedVolumes[thresholdIndex]
+        val volumeThreshold = BigDecimal.valueOf(digest.quantile(filterPercentile))
         window.volumeThreshold = volumeThreshold
 
-        // Сохраняем статистику окна в БД
         val volumeWindow = VolumeWindow(
             exchange = window.exchange,
             symbol = window.symbol,
@@ -179,11 +165,12 @@ class VolumeFilterProcessor(
         // Проверяем превышает ли сделка порог
         if (volumeUsd >= window.volumeThreshold) {
             // Определяем категорию
+            val digest = window.digest ?: return
             val category = when {
-                volumeUsd >= window.sortedVolumes[(window.sortedVolumes.size * 0.995).toInt()] ->
+                volumeUsd >= BigDecimal.valueOf(digest.quantile(0.995)) ->
                     TradeCategory.WHALE
 
-                volumeUsd >= window.sortedVolumes[(window.sortedVolumes.size * 0.99).toInt()] ->
+                volumeUsd >= BigDecimal.valueOf(digest.quantile(0.99)) ->
                     TradeCategory.VERY_LARGE
 
                 else -> TradeCategory.LARGE

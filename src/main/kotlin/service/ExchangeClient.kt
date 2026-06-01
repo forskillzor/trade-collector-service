@@ -112,4 +112,8 @@ class ExchangeClient(
 
         log.info { "Client ${config.name} stopped" }
     }
+
+    fun isConnected(): Boolean = clientScope != null && clientScope!!.isActive
+
+    fun getName(): String = config.name
 }

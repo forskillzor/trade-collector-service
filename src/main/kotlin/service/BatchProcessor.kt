@@ -63,7 +63,8 @@ private class CircuitBreaker(
 class BatchProcessor(
     private val dao: TradeDAO,
     private val batchSize: Int = 1000,
-    private val flushIntervalMs: Long = 1000
+    private val flushIntervalMs: Long = 1000,
+    private val diskBuffer: DiskBuffer? = null
 ) {
     private val tradeQueues = ConcurrentHashMap<String, ConcurrentLinkedQueue<Trade>>()
     private val circuitBreaker = CircuitBreaker()
@@ -74,6 +75,13 @@ class BatchProcessor(
         if (isRunning) return
 
         isRunning = true
+
+        // Replay pending disk buffer
+        if (diskBuffer?.hasPending() == true) {
+            log.info { "Replaying disk buffer..." }
+            diskBuffer.replayTo(dao)
+        }
+
         job = scope.launch {
             processBatchLoop()
         }
@@ -123,7 +131,8 @@ class BatchProcessor(
 
         if (batch.isNotEmpty()) {
             if (!circuitBreaker.isCallAllowed()) {
-                log.warn { "Circuit Breaker OPEN — dropping ${batch.size} trades for $key" }
+                log.warn { "Circuit Breaker OPEN — saving ${batch.size} trades to disk for $key" }
+                diskBuffer?.saveBatch(batch)
             } else {
                 try {
                     dao.insertRawTradesBatch(batch)

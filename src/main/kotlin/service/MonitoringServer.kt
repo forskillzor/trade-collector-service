@@ -22,6 +22,7 @@ class MonitoringServer(
     private val host: String = "0.0.0.0",
     private val tradeProcessor: TradeProcessor,
     private val tradeDAO: TradeDAO,
+    private val exchangeClients: List<ExchangeClient> = emptyList(),
 ) {
     private var server: EmbeddedServer<JettyApplicationEngine, JettyApplicationEngineBase.Configuration>? = null
 
@@ -54,14 +55,26 @@ class MonitoringServer(
                         }
 
                         get("/health") {
-                            call.respond(
-                                mapOf(
-                                    "status" to "healthy",
-//                                    "timestamp" to System.currentTimeMillis(),
-                                    "service" to "TradeCollectorService",
-                                    "version" to BuildConfig.VERSION
+                            val dbHealthy = tradeDAO.ping()
+                            val wsConnected = exchangeClients.filter { it.isConnected() }.map { it.getName() }
+                            val wsTotal = exchangeClients.size
+
+                            val healthy = dbHealthy && wsConnected.isNotEmpty()
+
+                            val status = mutableMapOf(
+                                "status" to if (healthy) "healthy" else "degraded",
+                                "service" to "TradeCollectorService",
+                                "version" to BuildConfig.VERSION,
+                                "checks" to mapOf(
+                                    "database" to if (dbHealthy) "ok" else "down",
+                                    "websockets" to mapOf(
+                                        "total" to wsTotal,
+                                        "connected" to wsConnected.size,
+                                        "exchanges" to wsConnected
+                                    )
                                 )
                             )
+                            call.respond(status)
                         }
 
                         get("/metrics") {
