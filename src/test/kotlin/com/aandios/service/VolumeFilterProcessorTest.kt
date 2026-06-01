@@ -91,7 +91,8 @@ class VolumeFilterProcessorTest {
         processor.processTrade(createTrade(timestamp = 5, quantity = BigDecimal("2.5")))
 
         // The 100.0 volume trade should have been above threshold at its time
-        verify(atLeast = 1) { dao.insertFilteredTrade(any()) }
+        processor.flushFilteredTrades()
+        verify(atLeast = 1) { dao.insertFilteredTradesBatch(any()) }
     }
 
     @Test
