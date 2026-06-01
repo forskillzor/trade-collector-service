@@ -17,8 +17,8 @@
 | 5 | ~~Data Race в `BatchProcessor.flushBatch()`~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 37, 86 |
 | 6 | ~~Data Race в `VolumeFilterProcessor.SlidingWindowStats`~~ ✅ | RESOLVED | `service/VolumeFilterProcessor.kt` | 21, 29-37 |
 | 7 | ~~Config.json загружается дважды при старте~~ ✅ | RESOLVED | `Main.kt` | 27, 37 |
-| 8 | Resource leak: `ExchangeClient` создаёт `CoroutineScope` на символ | 🔴 CRITICAL | `service/ExchangeClient.kt` | 42 |
-| 9 | Apache Arrow — утечка off-heap памяти | 🔴 CRITICAL | `service/AggregateProcessor.kt` | 94 |
+| 8 | ~~Resource leak: `ExchangeClient` создаёт `CoroutineScope` на символ~~ ✅ | RESOLVED | `service/ExchangeClient.kt` | 42 |
+| 9 | ~~Apache Arrow — утечка off-heap памяти~~ ✅ | RESOLVED | `service/AggregateProcessor.kt` | — |
 | 10 | `filtered_trades` — одиночные INSERT вместо batch | 🔴 CRITICAL | `service/VolumeFilterProcessor.kt` | 215 |
 | 11 | Data Race в `TradeProcessor.InstrumentStats` | 🔴 CRITICAL | `service/TradeProcessor.kt` | 33-37 |
 | 12 | Нет Circuit Breaker для PostgreSQL | 🔴 CRITICAL | — | — |
@@ -121,35 +121,28 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 CRITICAL #8: Resource leak в `ExchangeClient`
+### ~~CRITICAL #8: Resource leak в `ExchangeClient`~~ ✅ RESOLVED
 
-**Файл:** `service/ExchangeClient.kt:42`
-```kotlin
-val job = CoroutineScope(Dispatchers.IO).launch {
-    connectAndListen(url, symbol, client)
-}
-```
+**Файл:** `service/ExchangeClient.kt:42` → `service/ExchangeClient.kt:20, 23, 43-47, 106-108`
 
-Для каждого symbol создаётся новый `CoroutineScope(Dispatchers.IO)`. При `stop()` вызывается `clientJobs.forEach { it.cancel() }`, но сам Scope не отменяется — висит в памяти. При 10 символах = 10 утекших scope'ов.
+**Было:** Для каждого symbol создавался новый `CoroutineScope(Dispatchers.IO)`. При `stop()` отменялись только Job'ы, но scope висел в памяти. При N символах = N утекших scope'ов.
 
-**Исправление:** Использовать общий scope из `TradeCollectorService` (он уже передаётся через `launchClientForSymbol`), либо хранить scope и отменять его.
+**Исправлено:**
+- `clientJobs: MutableList<Job>` заменён на `clientScope: CoroutineScope?`
+- В `start()` создаётся один общий `CoroutineScope(Dispatchers.IO + SupervisorJob())`
+- Все `launch` идут через `clientScope?.let { it.launch { ... } }`
+- `stop()` вызывает `clientScope?.cancel()` + `clientScope = null`
+- `SupervisorJob()` гарантирует, что падение одного symbol не отменяет остальные
 
 ---
 
-### 🔴 CRITICAL #9: Apache Arrow — утечка off-heap памяти
+### ~~CRITICAL #9: Apache Arrow — утечка off-heap памяти~~ ✅ RESOLVED
 
-**Файл:** `service/AggregateProcessor.kt:16, 94`
-```kotlin
-private val allocator = RootAllocator()
-// ...
-val childAllocator = this@AggregateProcessor.allocator.newChildAllocator("candle-builder", 0, Long.MAX_VALUE)
-```
+**Файл:** `service/AggregateProcessor.kt` — Arrow полностью удалён после rollback'а.
 
-`RootAllocator` без лимита памяти. Каждый вызов `buildArrowData()` создаёт `childAllocator`, который в `finally` закрывается, но native-память обратно ОС не возвращается (только в пул). При длительной работе off-heap память растёт.
+**Было:** `RootAllocator` без лимита памяти + `childAllocator` на каждый вызов `buildArrowData()`. Native-память не возвращалась ОС, при длительной работе off-heap росла.
 
-Плюс: `Float8Vector` конвертирует `BigDecimal.toDouble()` — теряется точность (связано с BLOCKER #4).
-
-**Исправление:** Заменить Arrow на JSONB в PostgreSQL (уже запланировано в `critical-issues.md`).
+**Исправлено:** Arrow заменён на JSONB в PostgreSQL — `AggregateCandleBuilder.buildPriceLevelsJson()` строит JSON напрямую, сохраняется через `dao.saveAggregate()`. Никаких нативных аллокаций, память под GC.
 
 ---
 
@@ -323,8 +316,8 @@ connectionTestQuery = "SELECT 1"
 | # | Задача | Оценка |
 |---|--------|--------|
 | 2.1 | Убрать двойную загрузку конфига, путь `config/production.json` | 15 мин |
-| 2.2 | Исправить resource leak в `ExchangeClient` | 1 ч |
-| 2.3 | Заменить Arrow на JSONB в `AggregateProcessor` | 8 ч |
+| ~~2.2~~ | ~~Исправить resource leak в `ExchangeClient`~~ ✅ | — |
+| ~~2.3~~ | ~~Заменить Arrow на JSONB в `AggregateProcessor`~~ ✅ | — |
 | 2.4 | Batch-вставка `filtered_trades` | 2 ч |
 | 2.5 | Atomic-поля в `InstrumentStats` | 30 мин |
 | 2.6 | Circuit Breaker для БД | 4 ч |
@@ -349,9 +342,9 @@ connectionTestQuery = "SELECT 1"
 | Категория | Количество |
 |-----------|-----------|
 | 🔴 BLOCKER | 0 |
-| 🔴 CRITICAL | 9 |
+| 🔴 CRITICAL | 7 |
 | 🟡 MEDIUM | 7 |
-| **Всего** | **16** |
+| **Всего** | **14** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 

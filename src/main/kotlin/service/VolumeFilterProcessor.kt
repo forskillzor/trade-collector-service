@@ -20,6 +20,8 @@ class VolumeFilterProcessor(
     private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>() // ключ: "exchange_symbol"
     private val processedTrades = ConcurrentHashMap<String, Long>() // для отслеживания прогресса
     private val windowLocks = ConcurrentHashMap<String, Any>() // per-instrument синхронизация
+    private val filteredTradeBuffer = Collections.synchronizedList(mutableListOf<FilteredTrade>())
+    private val filteredFlushSize = 100
 
     data class SlidingWindowStats(
         val exchange: String,
@@ -198,10 +200,27 @@ class VolumeFilterProcessor(
                 windowTotalTrades = window.totalTrades
             )
 
-            // Сохраняем фильтрованную сделку
-            dao.insertFilteredTrade(filteredTrade)
+            // Сохраняем фильтрованную сделку батчом
+            filteredTradeBuffer.add(filteredTrade)
+            if (filteredTradeBuffer.size >= filteredFlushSize) {
+                flushFilteredTrades()
+            }
 
             log.info { "Large trade ${trade.exchange}/${trade.symbol} | ${category} vol=${volumeUsd} > threshold=${window.volumeThreshold}" }
+        }
+    }
+
+    fun flushFilteredTrades() {
+        val batch = synchronized(filteredTradeBuffer) {
+            if (filteredTradeBuffer.isEmpty()) return
+            filteredTradeBuffer.toList().also { filteredTradeBuffer.clear() }
+        }
+        try {
+            dao.insertFilteredTradesBatch(batch)
+            log.debug { "Flushed ${batch.size} filtered trades" }
+        } catch (e: Exception) {
+            log.error(e) { "Failed to flush filtered trades, re-queued ${batch.size}" }
+            filteredTradeBuffer.addAll(0, batch)
         }
     }
 

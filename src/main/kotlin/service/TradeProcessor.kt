@@ -148,6 +148,7 @@ class TradeProcessor(
 
     fun shutdown() {
         batchProcessor.stop()
+        volumeFilterProcessor.flushFilteredTrades()
         aggregateProcessor.flushAll()
         log.info { "TradeProcessor stopped" }
     }
