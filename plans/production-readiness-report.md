@@ -19,9 +19,9 @@
 | 7 | ~~Config.json загружается дважды при старте~~ ✅ | RESOLVED | `Main.kt` | 27, 37 |
 | 8 | ~~Resource leak: `ExchangeClient` создаёт `CoroutineScope` на символ~~ ✅ | RESOLVED | `service/ExchangeClient.kt` | 42 |
 | 9 | ~~Apache Arrow — утечка off-heap памяти~~ ✅ | RESOLVED | `service/AggregateProcessor.kt` | — |
-| 10 | `filtered_trades` — одиночные INSERT вместо batch | 🔴 CRITICAL | `service/VolumeFilterProcessor.kt` | 215 |
-| 11 | Data Race в `TradeProcessor.InstrumentStats` | 🔴 CRITICAL | `service/TradeProcessor.kt` | 33-37 |
-| 12 | Нет Circuit Breaker для PostgreSQL | 🔴 CRITICAL | — | — |
+| 10 | ~~`filtered_trades` — одиночные INSERT вместо batch~~ ✅ | RESOLVED | `service/VolumeFilterProcessor.kt` | 202 |
+| 11 | ~~Data Race в `TradeProcessor.InstrumentStats`~~ ✅ | RESOLVED | `service/TradeProcessor.kt` | 37-41 |
+| 12 | ~~Нет Circuit Breaker для PostgreSQL~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 12-61 |
 | 13 | Graceful shutdown без таймаутов | 🔴 CRITICAL | `Main.kt` | 92-94 |
 | 14 | `MonitoringServer` слушает только localhost | 🔴 CRITICAL | `service/MonitoringServer.kt` | 34 |
 | 15 | HikariCP без leak-detection и keepalive | 🔴 CRITICAL | `storage/postgres/TradeDAO.kt` | 21-37 |
@@ -146,44 +146,41 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 CRITICAL #10: Одиночные INSERT для filtered_trades
+### ~~CRITICAL #10: Одиночные INSERT для filtered_trades~~ ✅ RESOLVED
 
-**Файл:** `service/VolumeFilterProcessor.kt:203`
-```kotlin
-dao.insertFilteredTrade(filteredTrade)  // одиночная вставка!
-```
+**Файл:** `service/VolumeFilterProcessor.kt:202` → `VolumeFilterProcessor.kt:203-225, TradeProcessor.kt:151`
 
-Метод `insertFilteredTradesBatch()` уже реализован в DAO (строка 180), но не используется. Каждая китовая сделка — отдельный SQL-запрос.
+**Было:** `dao.insertFilteredTrade(filteredTrade)` — каждая китовая сделка отдельным SQL-запросом. Метод `insertFilteredTradesBatch()` уже был реализован в DAO, но не вызывался.
 
-**Исправление:** Аккумулировать `FilteredTrade` в буфер и вставлять batch'ами через `insertFilteredTradesBatch()`.
-
----
-
-### 🔴 CRITICAL #11: Data Race в `TradeProcessor.InstrumentStats`
-
-**Файл:** `service/TradeProcessor.kt:33-37`
-```kotlin
-data class InstrumentStats(
-    var totalTrades: Long = 0,       // var Long — не атомарно
-    var lastTradeTime: Long = 0,
-    var batchQueueSize: Int = 0
-)
-private val instrumentStats = ConcurrentHashMap<String, InstrumentStats>()
-```
-
-`totalTrades++` (строка 47) не атомарно для `Long`. Несколько корутин могут одновременно инкрементировать счётчик.
-
-**Исправление:** `AtomicLong` / `AtomicInteger` вместо `var`.
+**Исправлено:**
+- Добавлен `filteredTradeBuffer: Collections.synchronizedList<FilteredTrade>` с авто-flush при достижении 100 элементов
+- Метод `flushFilteredTrades()`: атомарно вынимает батч, вызывает `dao.insertFilteredTradesBatch()`, при ошибке кладёт обратно
+- В `TradeProcessor.shutdown()` добавлен вызов `volumeFilterProcessor.flushFilteredTrades()` для слива остатков
 
 ---
 
-### 🔴 CRITICAL #12: Нет Circuit Breaker для PostgreSQL
+### ~~CRITICAL #11: Data Race в `TradeProcessor.InstrumentStats`~~ ✅ RESOLVED
 
-При падении PostgreSQL сервис продолжает бесконечно ретраить вставки. `BatchProcessor.flushBatch()` при ошибке кладёт батч обратно в очередь (строка 74-77) — бесконечный цикл. Это ведёт к:
-- Росту очереди до OOM
-- Деградации всех остальных компонентов
+**Файл:** `service/TradeProcessor.kt:37-41, 77-82`
 
-**Исправление:** Circuit Breaker с состояниями CLOSED → OPEN → HALF_OPEN (описан в `plans/critical-issues.md`).
+**Было:** `data class InstrumentStats(var totalTrades: Long = 0, ...)` — `totalTrades++` из параллельных корутин — read-modify-write над неатомарным `Long`, потеря счётчика.
+
+**Исправлено:** `var Long`/`var Int` заменены на `val AtomicLong`/`val AtomicInteger`. Инкремент/запись через `.incrementAndGet()` и `.set()`.
+
+---
+
+### ~~CRITICAL #12: Нет Circuit Breaker для PostgreSQL~~ ✅ RESOLVED
+
+**Файл:** `service/BatchProcessor.kt:12-61, 69, 124-142`
+
+**Было:** При ошибке `dao.insertRawTradesBatch()` батч клался обратно в очередь — бесконечный ретрай → рост очереди до OOM.
+
+**Исправлено:** Добавлен класс `CircuitBreaker` с состояниями CLOSED → OPEN → HALF_OPEN:
+- 3 последовательных ошибки → OPEN (30 сек таймаут)
+- В OPEN батчи дропаются (не ре-queue) с логом
+- По таймауту → HALF_OPEN, пробует 1 батч
+- Успех → CLOSED, ошибка → OPEN
+- `flushBatch()` проверяет `isCallAllowed()` перед вставкой
 
 ---
 
@@ -318,9 +315,9 @@ connectionTestQuery = "SELECT 1"
 | 2.1 | Убрать двойную загрузку конфига, путь `config/production.json` | 15 мин |
 | ~~2.2~~ | ~~Исправить resource leak в `ExchangeClient`~~ ✅ | — |
 | ~~2.3~~ | ~~Заменить Arrow на JSONB в `AggregateProcessor`~~ ✅ | — |
-| 2.4 | Batch-вставка `filtered_trades` | 2 ч |
-| 2.5 | Atomic-поля в `InstrumentStats` | 30 мин |
-| 2.6 | Circuit Breaker для БД | 4 ч |
+| ~~2.4~~ | ~~Batch-вставка `filtered_trades`~~ ✅ | — |
+| ~~2.5~~ | ~~Atomic-поля в `InstrumentStats`~~ ✅ | — |
+| ~~2.6~~ | ~~Circuit Breaker для БД~~ ✅ | — |
 | 2.7 | Таймауты в graceful shutdown | 1 ч |
 | 2.8 | `0.0.0.0` для MonitoringServer | 15 мин |
 | 2.9 | HikariCP: leakDetection + keepalive + validation | 15 мин |
@@ -342,9 +339,9 @@ connectionTestQuery = "SELECT 1"
 | Категория | Количество |
 |-----------|-----------|
 | 🔴 BLOCKER | 0 |
-| 🔴 CRITICAL | 7 |
+| 🔴 CRITICAL | 4 |
 | 🟡 MEDIUM | 7 |
-| **Всего** | **14** |
+| **Всего** | **11** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 

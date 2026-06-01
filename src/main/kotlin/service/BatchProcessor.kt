@@ -9,12 +9,64 @@ import java.util.concurrent.ConcurrentHashMap
 
 private val log = KotlinLogging.logger {}
 
+private class CircuitBreaker(
+    private val failureThreshold: Int = 3,
+    private val resetTimeoutMs: Long = 30_000
+) {
+    enum class State { CLOSED, OPEN, HALF_OPEN }
+
+    var state = State.CLOSED
+        private set
+    private var failureCount = 0
+    private var lastFailureTime = 0L
+
+    fun isCallAllowed(): Boolean {
+        return when (state) {
+            State.CLOSED -> true
+            State.OPEN -> {
+                if (System.currentTimeMillis() - lastFailureTime > resetTimeoutMs) {
+                    state = State.HALF_OPEN
+                    log.info { "Circuit Breaker → HALF_OPEN" }
+                    true
+                } else {
+                    false
+                }
+            }
+            State.HALF_OPEN -> true
+        }
+    }
+
+    fun onSuccess() {
+        if (state != State.CLOSED) {
+            log.info { "Circuit Breaker → CLOSED" }
+        }
+        state = State.CLOSED
+        failureCount = 0
+    }
+
+    fun onFailure() {
+        failureCount++
+        lastFailureTime = System.currentTimeMillis()
+        when {
+            state == State.HALF_OPEN -> {
+                state = State.OPEN
+                log.warn { "Circuit Breaker → OPEN" }
+            }
+            state == State.CLOSED && failureCount >= failureThreshold -> {
+                state = State.OPEN
+                log.warn { "Circuit Breaker → OPEN after $failureCount failures" }
+            }
+        }
+    }
+}
+
 class BatchProcessor(
     private val dao: TradeDAO,
     private val batchSize: Int = 1000,
     private val flushIntervalMs: Long = 1000
 ) {
     private val tradeQueues = ConcurrentHashMap<String, ConcurrentLinkedQueue<Trade>>()
+    private val circuitBreaker = CircuitBreaker()
     private var isRunning = false
     private var job: Job? = null
 
@@ -70,18 +122,22 @@ class BatchProcessor(
         }
 
         if (batch.isNotEmpty()) {
-            try {
-                dao.insertRawTradesBatch(batch)
-                log.debug { "Inserted ${batch.size} trades for $key" }
-            } catch (e: Exception) {
-                log.error(e) { "Batch insert error" }
-                // Возвращаем обратно в ту же очередь
-                batch.forEach { trade ->
-                    // Проверяем, что очередь ещё существует
-                    val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
-                    currentQueue.offer(trade)
+            if (!circuitBreaker.isCallAllowed()) {
+                log.warn { "Circuit Breaker OPEN — dropping ${batch.size} trades for $key" }
+            } else {
+                try {
+                    dao.insertRawTradesBatch(batch)
+                    circuitBreaker.onSuccess()
+                    log.debug { "Inserted ${batch.size} trades for $key" }
+                } catch (e: Exception) {
+                    log.error(e) { "Batch insert error" }
+                    circuitBreaker.onFailure()
+                    batch.forEach { trade ->
+                        val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
+                        currentQueue.offer(trade)
+                    }
+                    return
                 }
-                return
             }
         }
 
