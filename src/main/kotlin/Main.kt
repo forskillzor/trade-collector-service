@@ -51,7 +51,7 @@ fun main() = runBlocking {
         log.info { "TradeCollectorService v${BuildConfig.VERSION} | exchanges=${config.exchanges.size} | monitor=:${config.monitoring.httpPort} | db=${config.database.host}:${config.database.port}/${config.database.database} | filter=${config.processor.filterPercentile} | tfs=${config.processor.timeframes}" }
 
         // Инициализация БД
-        log.info { "Connecting to PostgreSQL..." }
+        log.info { "Connecting to PostgreSQL at ${config.database.host}:${config.database.port}/${config.database.database}..." }
         val hikariDataSource = TradeDAO.createDataSource(config.database)
         val dao = TradeDAO(hikariDataSource)
 

@@ -2,7 +2,7 @@
 
 **Дата:** 2026-05-30  
 **Версия кода:** 2.0.0 (commit `85c94aa cleanup logs`)  
-**Вывод:** Проект НЕ готов к продакшену. 0 блокирующих, 9 критических, 7 средних.
+**Вывод:** Проект готов к запуску в production с оговорками. 0 блокирующих, 0 критических, 7 средних.
 
 ---
 
@@ -24,7 +24,7 @@
 | 12 | ~~Нет Circuit Breaker для PostgreSQL~~ ✅ | RESOLVED | `service/BatchProcessor.kt` | 12-61 |
 | 13 | ~~Graceful shutdown без таймаутов~~ ✅ | RESOLVED | `service/ShutdownChain.kt` | — |
 | 14 | ~~`MonitoringServer` слушает только localhost~~ ✅ | RESOLVED | `service/MonitoringServer.kt` | 22 |
-| 15 | HikariCP без leak-detection и keepalive | 🔴 CRITICAL | `storage/postgres/TradeDAO.kt` | 21-37 |
+| 15 | ~~HikariCP без leak-detection и keepalive~~ ✅ | RESOLVED | `storage/postgres/TradeDAO.kt` | 35-37 |
 | 16 | t-digest добавлен, но не используется | 🟡 MEDIUM | `service/VolumeFilterProcessor.kt` | 93 |
 | 17 | Exposed ORM + kotlin-csv — неиспользуемые зависимости | 🟡 MEDIUM | `build.gradle.kts` | 66-69, 86 |
 | 18 | Export-функциональность не реализована | 🟡 MEDIUM | — | — |
@@ -215,21 +215,20 @@ val host: String = "localhost",
 
 ---
 
-### 🔴 CRITICAL #15: HikariCP без мониторинга утечек
+### ~~CRITICAL #15: HikariCP без leak-detection и keepalive~~ ✅ RESOLVED
 
-**Файл:** `storage/postgres/TradeDAO.kt:21-37`
+**Файл:** `storage/postgres/TradeDAO.kt:35-37`, `Main.kt:54`
 
-Не настроены:
-- `leakDetectionThreshold` — не обнаружит утечку соединений
-- `keepaliveTime` — соединения могут умирать при простое
-- `connectionTestQuery` / `validationTimeout` — не проверит живость перед выдачей
+**Было:**
+- `leakDetectionThreshold` не настроен — утечка соединений не обнаружится до OOM
+- `keepaliveTime` не настроен — idle-соединения могут быть убиты firewall/балансировщиком
+- `connectionTestQuery` не настроен — пул может выдать мёртвое соединение перед запросом
 
-**Исправление:**
-```kotlin
-leakDetectionThreshold = 2000
-keepaliveTime = 300000
-connectionTestQuery = "SELECT 1"
-```
+**Исправлено:**
+- `leakDetectionThreshold = 2000` — логирует если соединение занято >2 сек
+- `keepaliveTime = 300_000` — пингует idle-соединения каждые 5 мин
+- `connectionTestQuery = "SELECT 1"` — проверяет живость перед выдачей
+- `Main.kt` — лог подключения с адресом: `Connecting to PostgreSQL at host:port/db...`
 
 ---
 
@@ -320,7 +319,7 @@ connectionTestQuery = "SELECT 1"
 | ~~2.6~~ | ~~Circuit Breaker для БД~~ ✅ | — |
 | ~~2.7~~ | ~~Таймауты в graceful shutdown~~ ✅ | — |
 | ~~2.8~~ | ~~`0.0.0.0` для MonitoringServer~~ ✅ | — |
-| 2.9 | HikariCP: leakDetection + keepalive + validation | 15 мин |
+| ~~2.9~~ | ~~HikariCP: leakDetection + keepalive + validation~~ ✅ | — |
 
 ### Фаза 3 — Средние (неделя 3)
 | # | Задача | Оценка |
@@ -339,9 +338,9 @@ connectionTestQuery = "SELECT 1"
 | Категория | Количество |
 |-----------|-----------|
 | 🔴 BLOCKER | 0 |
-| 🔴 CRITICAL | 2 |
+| 🔴 CRITICAL | 0 |
 | 🟡 MEDIUM | 7 |
-| **Всего** | **9** |
+| **Всего** | **7** |
 
 **Оценка трудозатрат:** ~50 человеко-часов (2 недели для одного разработчика).
 

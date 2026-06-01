@@ -31,6 +31,10 @@ class TradeDAO(
                 addDataSourceProperty("preparedStatementCacheQueries", "1024")
                 addDataSourceProperty("preparedStatementCacheSizeMiB", "32")
                 addDataSourceProperty("tcpKeepAlive", "true")
+
+                leakDetectionThreshold = 2000
+                keepaliveTime = 300_000
+                connectionTestQuery = "SELECT 1"
             }
 
             return HikariDataSource(hikariConfig)
