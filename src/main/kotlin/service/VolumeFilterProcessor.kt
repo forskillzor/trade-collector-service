@@ -18,24 +18,46 @@ class VolumeFilterProcessor(
     private val slideStep: Int = 100000,
     private val filterPercentile: Double = 0.98
 ) {
-    private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>() // ключ: "exchange_symbol"
-    private val processedTrades = ConcurrentHashMap<String, Long>() // для отслеживания прогресса
-    private val windowLocks = ConcurrentHashMap<String, Any>() // per-instrument синхронизация
+    private val slidingWindows = ConcurrentHashMap<String, SlidingWindowStats>()
+    private val processedTrades = ConcurrentHashMap<String, Long>()
+    private val windowLocks = ConcurrentHashMap<String, Any>()
     private val filteredTradeBuffer = Collections.synchronizedList(mutableListOf<FilteredTrade>())
     private val filteredFlushSize = 100
+    private val chunksTarget = 1000
+    private val chunkSize = (windowSize / chunksTarget).coerceAtLeast(100)
+    private val alpha: BigDecimal = BigDecimal.ONE.divide(BigDecimal(windowSize), 10, RoundingMode.HALF_UP)
+    private val oneMinusAlpha: BigDecimal = BigDecimal.ONE.subtract(alpha)
+
+    data class Chunk(
+        var count: Int = 0,
+        var sum: BigDecimal = BigDecimal.ZERO,
+        var sumSquared: BigDecimal = BigDecimal.ZERO,
+        val digest: MergingDigest = MergingDigest(100.0)
+    ) {
+        fun add(volume: BigDecimal) {
+            count++
+            sum = sum.add(volume)
+            sumSquared = sumSquared.add(volume.multiply(volume))
+            digest.add(volume.toDouble())
+        }
+    }
 
     data class SlidingWindowStats(
         val exchange: String,
         val symbol: String,
         var startIndex: Long = 0,
-        var volumes: LinkedList<BigDecimal> = LinkedList(),
-        var sum: BigDecimal = BigDecimal.ZERO,
-        var sumSquared: BigDecimal = BigDecimal.ZERO,
-        var digest: MergingDigest? = null,
+        var chunks: ArrayDeque<Chunk> = ArrayDeque(),
+        var currentChunk: Chunk = Chunk(),
+        var chunkedCount: Long = 0,
         var totalTrades: Int = 0,
+        var ewmaMean: BigDecimal = BigDecimal.ZERO,
+        var ewmaVar: BigDecimal = BigDecimal.ZERO,
+        var minVolume: BigDecimal = BigDecimal.ZERO,
+        var maxVolume: BigDecimal = BigDecimal.ZERO,
+        var digest: MergingDigest? = null,
+        var volumeThreshold: BigDecimal = BigDecimal.ZERO,
         var windowStartTime: Long = 0,
-        var windowEndTime: Long = 0,
-        var volumeThreshold: BigDecimal = BigDecimal.ZERO
+        var windowEndTime: Long = 0
     )
 
     fun processTrade(trade: Trade) {
@@ -43,7 +65,6 @@ class VolumeFilterProcessor(
         val lock = windowLocks.getOrPut(key) { Any() }
 
         synchronized(lock) {
-            // Инициализируем окно если нужно
             if (!slidingWindows.containsKey(key)) {
                 slidingWindows[key] = SlidingWindowStats(
                     exchange = trade.exchange,
@@ -54,27 +75,43 @@ class VolumeFilterProcessor(
             }
 
             val window = slidingWindows[key]!!
-
-            // Добавляем объём в окно
             val volumeUsd = trade.getVolumeUsd()
-            window.volumes.add(volumeUsd)
-            window.sum = window.sum.add(volumeUsd)
-            window.sumSquared = window.sumSquared.add(volumeUsd.multiply(volumeUsd))
+
+            // EWMA: старые данные decay-ят, свежие имеют больший вес
+            window.ewmaMean = alpha.multiply(volumeUsd).add(oneMinusAlpha.multiply(window.ewmaMean))
+            val diff = volumeUsd.subtract(window.ewmaMean)
+            window.ewmaVar = alpha.multiply(diff.multiply(diff)).add(oneMinusAlpha.multiply(window.ewmaVar))
+
+            // Track min/max
+            if (window.totalTrades == 0) {
+                window.minVolume = volumeUsd
+                window.maxVolume = volumeUsd
+            } else {
+                if (volumeUsd < window.minVolume) window.minVolume = volumeUsd
+                if (volumeUsd > window.maxVolume) window.maxVolume = volumeUsd
+            }
+
+            // Add to current chunk
+            window.currentChunk.add(volumeUsd)
             window.totalTrades++
             window.windowEndTime = trade.timestamp
 
-            // Поддерживаем размер окна
-            if (window.volumes.size > windowSize) {
-                val removed = window.volumes.removeFirst()
-                window.sum = window.sum.subtract(removed)
-                window.sumSquared = window.sumSquared.subtract(removed.multiply(removed))
-                window.startIndex++
+            // Flush chunk when full
+            if (window.currentChunk.count >= chunkSize) {
+                window.chunks.addLast(window.currentChunk)
+                window.chunkedCount += window.currentChunk.count
+                window.currentChunk = Chunk()
             }
 
-            // Обновляем обработанные сделки
+            // Drop oldest chunks to maintain window size
+            while (window.chunkedCount + window.currentChunk.count > windowSize && window.chunks.isNotEmpty()) {
+                val dropped = window.chunks.removeFirst()
+                window.chunkedCount -= dropped.count
+                window.startIndex += dropped.count
+            }
+
             processedTrades[key] = processedTrades[key]!! + 1
 
-            // Проверяем нужно ли сдвинуть окно и пересчитать статистику
             if (shouldRecalculateWindow(key)) {
                 recalculateWindowStats(window)
                 checkAndSaveFilteredTrade(trade, window, volumeUsd)
@@ -88,47 +125,53 @@ class VolumeFilterProcessor(
     }
 
     private fun recalculateWindowStats(window: SlidingWindowStats) {
-        if (window.volumes.isEmpty()) return
+        if (window.totalTrades == 0) return
 
-        val size = window.volumes.size
-        val n = BigDecimal(size)
+        // Merge all chunk digests + current
+        val merged = MergingDigest(100.0)
+        window.chunks.forEach { merged.add(it.digest) }
+        merged.add(window.currentChunk.digest)
+        window.digest = merged
 
-        // Build t-digest
-        val digest = MergingDigest(100.0)
-        window.volumes.forEach { digest.add(it.toDouble()) }
-        window.digest = digest
+        val totalSize = window.chunkedCount.toInt() + window.currentChunk.count
+        if (totalSize == 0) return
 
-        // Statistics from running sums
-        val minVolume = window.volumes.min()
-        val maxVolume = window.volumes.max()
-        val avgVolume = window.sum.divide(n, 8, RoundingMode.HALF_UP)
+        // Aggregate sum/sumSquared from chunks + current
+        var totalSum = BigDecimal.ZERO
+        var totalSumSq = BigDecimal.ZERO
+        window.chunks.forEach {
+            totalSum = totalSum.add(it.sum)
+            totalSumSq = totalSumSq.add(it.sumSquared)
+        }
+        totalSum = totalSum.add(window.currentChunk.sum)
+        totalSumSq = totalSumSq.add(window.currentChunk.sumSquared)
 
-        // Median from t-digest
-        val medianVolume = BigDecimal.valueOf(digest.quantile(0.5))
+        val n = BigDecimal(totalSize)
+        val avgVolume = totalSum.divide(n, 8, RoundingMode.HALF_UP)
+        val medianVolume = BigDecimal.valueOf(merged.quantile(0.5))
 
-        // Standard deviation from running sums: Var = E[X²] - E[X]²
+        // Standard deviation from aggregate sums: Var = E[X²] - E[X]²
         val variance = try {
             val meanSquared = avgVolume.multiply(avgVolume)
-            val meanOfSquares = window.sumSquared.divide(n, 8, RoundingMode.HALF_UP)
+            val meanOfSquares = totalSumSq.divide(n, 8, RoundingMode.HALF_UP)
             val v = meanOfSquares.subtract(meanSquared)
             if (v >= BigDecimal.ZERO) v else BigDecimal.ZERO
         } catch (e: Exception) {
             BigDecimal.ZERO
         }
-
         val stddevVolume = try {
             BigDecimal.valueOf(sqrt(variance.toDouble()))
         } catch (e: Exception) {
             BigDecimal.ZERO
         }
 
-        // Percentiles from t-digest
-        val p50Volume = BigDecimal.valueOf(digest.quantile(0.5))
-        val p95Volume = BigDecimal.valueOf(digest.quantile(0.95))
-        val p98Volume = BigDecimal.valueOf(digest.quantile(filterPercentile))
-        val p99Volume = BigDecimal.valueOf(digest.quantile(0.99))
+        // Percentiles from merged digest
+        val p50Volume = BigDecimal.valueOf(merged.quantile(0.5))
+        val p95Volume = BigDecimal.valueOf(merged.quantile(0.95))
+        val p98Volume = BigDecimal.valueOf(merged.quantile(filterPercentile))
+        val p99Volume = BigDecimal.valueOf(merged.quantile(0.99))
 
-        val volumeThreshold = BigDecimal.valueOf(digest.quantile(filterPercentile))
+        val volumeThreshold = BigDecimal.valueOf(merged.quantile(filterPercentile))
         window.volumeThreshold = volumeThreshold
 
         val volumeWindow = VolumeWindow(
@@ -137,8 +180,8 @@ class VolumeFilterProcessor(
             startTime = window.windowStartTime,
             endTime = window.windowEndTime,
             totalTrades = window.totalTrades,
-            minVolume = minVolume,
-            maxVolume = maxVolume,
+            minVolume = window.minVolume,
+            maxVolume = window.maxVolume,
             avgVolume = avgVolume,
             medianVolume = medianVolume,
             stddevVolume = stddevVolume,
@@ -162,9 +205,7 @@ class VolumeFilterProcessor(
     ) {
         if (window.volumeThreshold == BigDecimal.ZERO) return
 
-        // Проверяем превышает ли сделка порог
         if (volumeUsd >= window.volumeThreshold) {
-            // Определяем категорию
             val digest = window.digest ?: return
             val category = when {
                 volumeUsd >= BigDecimal.valueOf(digest.quantile(0.995)) ->
@@ -187,7 +228,6 @@ class VolumeFilterProcessor(
                 windowTotalTrades = window.totalTrades
             )
 
-            // Сохраняем фильтрованную сделку батчом
             filteredTradeBuffer.add(filteredTrade)
             if (filteredTradeBuffer.size >= filteredFlushSize) {
                 flushFilteredTrades()
@@ -215,7 +255,7 @@ class VolumeFilterProcessor(
         return slidingWindows.mapValues { (key, window) ->
             mapOf(
                 "totalTrades" to window.totalTrades,
-                "windowSize" to window.volumes.size,
+                "windowSize" to (window.chunkedCount + window.currentChunk.count).toInt(),
                 "volumeThreshold" to window.volumeThreshold,
                 "processedTrades" to (processedTrades[key] ?: 0L)
             )

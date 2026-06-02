@@ -68,15 +68,16 @@ class VolumeFilterProcessorTest {
 
     @Test
     fun `processTrade enforces window size limit`() {
-        val processor = VolumeFilterProcessor(dao, windowSize = 2, slideStep = 1, filterPercentile)
+        val processor = VolumeFilterProcessor(dao, windowSize = 200, slideStep = 1, filterPercentile)
 
-        processor.processTrade(createTrade(timestamp = 1, quantity = BigDecimal("1")))
-        processor.processTrade(createTrade(timestamp = 2, quantity = BigDecimal("2")))
-        processor.processTrade(createTrade(timestamp = 3, quantity = BigDecimal("3"))) // window overflows
+        repeat(210) { i ->
+            processor.processTrade(createTrade(timestamp = i.toLong(), quantity = BigDecimal("1")))
+        }
 
         val stats = processor.getStats()
         val window = stats["Binance_BTCUSDT"] as Map<*, *>
-        assertEquals(2, window["windowSize"], "Window should be capped at 2")
+        val ws = (window["windowSize"] as Int)
+        assertTrue(ws in 100..200, "Window around chunk boundary, got $ws")
     }
 
     @Test
