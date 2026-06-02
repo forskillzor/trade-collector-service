@@ -2,13 +2,10 @@
   "exchanges": [
     {
       "name": "Binance",
-      "symbols": ["btcusdt", "ethusdt", "solusdt"],
+      "symbols": ["btcusdt", "ethusdt", "bnbusdt", "xrpusdt", "solusdt", "trxusdt", "hypeusdt", "dogeusdt", "zecusdt",
+        "adausdt", "xlmusdt", "linkusdt", "xmpusdt", "bchusdt", "tonusdt", "daiusdt", "musdt", "ltcusdt", "avaxusdt",
+        "suiusdt"],
       "enabled": true
-    },
-    {
-      "name": "Bybit",
-      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
-      "enabled": false
     }
   ],
   "database": {
