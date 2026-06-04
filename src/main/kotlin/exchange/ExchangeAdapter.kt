@@ -8,4 +8,8 @@ interface ExchangeAdapter {
     fun getSubscribeMessage(symbol: String): String?
     fun parseTrade(json: String, symbol: String): Trade?
     fun isTradeMessage(json: String): Boolean
+
+    fun supportsCombinedStream(): Boolean = false
+    fun getCombinedStreamUrl(symbols: List<String>): String = ""
+    fun parseCombinedFrame(json: String): Pair<String, String>? = null
 }

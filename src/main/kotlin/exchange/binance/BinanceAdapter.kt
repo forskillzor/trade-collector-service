@@ -5,8 +5,27 @@ import com.aandios.model.Trade
 import java.math.BigDecimal
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
+    override fun supportsCombinedStream(): Boolean = true
+
+    override fun getCombinedStreamUrl(symbols: List<String>): String {
+        val streams = symbols.joinToString("/") { "${it.lowercase()}@aggTrade" }
+        return "wss://fstream.binance.com/stream?streams=$streams"
+    }
+
     override fun getWebSocketUrl(symbol: String): String {
         return "wss://fstream.binance.com/market/ws/${symbol.lowercase()}@aggTrade"
+    }
+
+    override fun parseCombinedFrame(json: String): Pair<String, String>? {
+        return try {
+            val root = mapper.readTree(json)
+            val stream = root["stream"]?.asText() ?: return null
+            val data = root["data"] ?: return null
+            val symbol = stream.removeSuffix("@aggTrade").uppercase()
+            symbol to mapper.writeValueAsString(data)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     override fun parseTrade(json: String, symbol: String): Trade? {
