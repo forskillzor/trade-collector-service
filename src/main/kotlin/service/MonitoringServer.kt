@@ -3,6 +3,8 @@ package com.aandios.service
 import com.aandios.BuildConfig
 import com.aandios.config.ConfigManager
 import com.aandios.storage.postgres.TradeDAO
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
@@ -16,6 +18,7 @@ import mu.KotlinLogging
 
 private val log = KotlinLogging.logger {}
 private val json = Json { prettyPrint = true }
+private val jmapper = jacksonObjectMapper()
 
 class MonitoringServer(
     private val port: Int = 8080,
@@ -74,34 +77,24 @@ class MonitoringServer(
                                     )
                                 )
                             )
-                            call.respond(status)
+                            call.respondText(jmapper.writeValueAsString(status), ContentType.Application.Json)
                         }
 
                         get("/metrics") {
                             val metrics = tradeProcessor.getMetrics()
-                            call.respond(metrics)
+                            call.respondText(jmapper.writeValueAsString(metrics), ContentType.Application.Json)
                         }
 
                         get("/status") {
                             val config = ConfigManager.getConfig()
                             val metrics = tradeProcessor.getMetrics()
-                            val memory = Runtime.getRuntime()
 
                             val status = mapOf(
                                 "service" to "TradeCollectorService",
                                 "version" to BuildConfig.VERSION,
-////                                "timestamp" to System.currentTimeMillis(),
-//                                "uptime" to "TODO",
-                                "metrics" to metrics,
-//                                "exchanges" to config.exchanges.map { it.name },
-//                                "memory" to mapOf(
-//                                    "totalMB" to memory.totalMemory() / 1024 / 1024,
-//                                    "freeMB" to memory.freeMemory() / 1024 / 1024,
-//                                    "maxMB" to memory.maxMemory() / 1024 / 1024
-//                                ),
-//                                "threads" to Thread.activeCount()
+                                "metrics" to metrics
                             )
-                            call.respond(status)
+                            call.respondText(jmapper.writeValueAsString(status), ContentType.Application.Json)
                         }
 
                         get("/exchanges") {
@@ -110,13 +103,12 @@ class MonitoringServer(
                         }
                         get("/database/stats") {
                             val stats = tradeDAO.getDatabaseStats()
-                            call.respond(
-                                mapOf(
-                                    "database" to "PostgreSQL",
-                                    "stats" to stats,
-                                    "timestamp" to System.currentTimeMillis()
-                                )
+                            val data = mapOf(
+                                "database" to "PostgreSQL",
+                                "stats" to stats,
+                                "timestamp" to System.currentTimeMillis()
                             )
+                            call.respondText(jmapper.writeValueAsString(data), ContentType.Application.Json)
                         }
                     }
                 }
