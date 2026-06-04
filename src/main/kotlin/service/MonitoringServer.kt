@@ -15,6 +15,8 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.Json
 import mu.KotlinLogging
+import java.io.File
+import java.lang.management.ManagementFactory
 
 private val log = KotlinLogging.logger {}
 private val json = Json { prettyPrint = true }
@@ -86,13 +88,43 @@ class MonitoringServer(
                         }
 
                         get("/status") {
-                            val config = ConfigManager.getConfig()
                             val metrics = tradeProcessor.getMetrics()
+                            val dbStats = tradeDAO.getDatabaseStats()
+                            val runtime = Runtime.getRuntime()
+                            val osBean = ManagementFactory.getOperatingSystemMXBean()
+                            val memoryBean = ManagementFactory.getMemoryMXBean()
+
+                            val diskRoot = File("/")
+                            val diskTotalMB = diskRoot.totalSpace / 1024 / 1024
+                            val diskFreeMB = diskRoot.freeSpace / 1024 / 1024
+
+                            val heap = memoryBean.heapMemoryUsage
+                            val nonHeap = memoryBean.nonHeapMemoryUsage
 
                             val status = mapOf(
                                 "service" to "TradeCollectorService",
                                 "version" to BuildConfig.VERSION,
-                                "metrics" to metrics
+                                "uptime" to ManagementFactory.getRuntimeMXBean().uptime,
+                                "timestamp" to System.currentTimeMillis(),
+                                "metrics" to metrics,
+                                "system" to mapOf(
+                                    "availableProcessors" to runtime.availableProcessors(),
+                                    "loadAverage" to osBean.systemLoadAverage,
+                                    "memory" to mapOf(
+                                        "totalMB" to runtime.totalMemory() / 1024 / 1024,
+                                        "freeMB" to runtime.freeMemory() / 1024 / 1024,
+                                        "maxMB" to runtime.maxMemory() / 1024 / 1024,
+                                        "heapUsedMB" to heap.used / 1024 / 1024,
+                                        "heapMaxMB" to heap.max / 1024 / 1024,
+                                        "nonHeapUsedMB" to nonHeap.used / 1024 / 1024
+                                    ),
+                                    "disk" to mapOf(
+                                        "totalMB" to diskTotalMB,
+                                        "freeMB" to diskFreeMB,
+                                        "usedPercent" to ((diskTotalMB - diskFreeMB) * 100 / diskTotalMB)
+                                    )
+                                ),
+                                "database" to dbStats
                             )
                             call.respondText(jmapper.writeValueAsString(status), ContentType.Application.Json)
                         }

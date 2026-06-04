@@ -393,6 +393,10 @@ class TradeDAO(
                     (SELECT COUNT(*) FROM aggregates) as aggregates_count,
                     (SELECT COUNT(*) FROM volume_windows) as windows_count,
                     pg_database_size(current_database()) as db_size_bytes,
+                    pg_total_relation_size('raw_trades') as raw_trades_bytes,
+                    pg_total_relation_size('filtered_trades') as filtered_trades_bytes,
+                    pg_total_relation_size('aggregates') as aggregates_bytes,
+                    pg_total_relation_size('volume_windows') as volume_windows_bytes,
                     (SELECT MAX(timestamp) FROM raw_trades) as latest_raw_trade,
                     (SELECT MAX(timestamp) FROM filtered_trades) as latest_filtered_trade
             """).use { stmt ->
@@ -404,6 +408,12 @@ class TradeDAO(
                         "aggregates" to rs.getInt("aggregates_count"),
                         "windows" to rs.getInt("windows_count"),
                         "dbSizeMB" to (rs.getLong("db_size_bytes") / 1024 / 1024),
+                        "tableSizes" to mapOf(
+                            "rawTradesMB" to (rs.getLong("raw_trades_bytes") / 1024 / 1024),
+                            "filteredTradesMB" to (rs.getLong("filtered_trades_bytes") / 1024 / 1024),
+                            "aggregatesMB" to (rs.getLong("aggregates_bytes") / 1024 / 1024),
+                            "volumeWindowsMB" to (rs.getLong("volume_windows_bytes") / 1024 / 1024)
+                        ),
                         "latestRawTrade" to rs.getLong("latest_raw_trade"),
                         "latestFilteredTrade" to rs.getLong("latest_filtered_trade")
                     )
