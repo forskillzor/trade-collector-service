@@ -7,6 +7,7 @@ import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 private val log = KotlinLogging.logger {}
 
@@ -14,7 +15,7 @@ class AggregateProcessor(
     private val dao: TradeDAO,
     private val timeframes: List<String> = listOf("1m", "5m", "1h")
 ) {
-    private val activeCandles = mutableMapOf<String, MutableMap<String, AggregateCandleBuilder>>()
+    private val activeCandles = ConcurrentHashMap<String, ConcurrentHashMap<String, AggregateCandleBuilder>>()
 
     inner class AggregateCandleBuilder(
         val exchange: String,
@@ -91,7 +92,7 @@ class AggregateProcessor(
             val candleStart = calculateCandleStart(trade.timestamp, timeframe)
 
             val symbolCandles = activeCandles.getOrPut("${trade.exchange}_${trade.symbol}") {
-                mutableMapOf()
+                ConcurrentHashMap()
             }
 
             var candleBuilder = symbolCandles[timeframe]
@@ -122,12 +123,14 @@ class AggregateProcessor(
     }
 
     fun flushAll() {
-        activeCandles.values.forEach { timeframeCandles ->
+        val snapshot = activeCandles.toMap()
+        activeCandles.clear()
+
+        snapshot.values.forEach { timeframeCandles ->
             timeframeCandles.values.forEach { candleBuilder ->
                 saveAggregate(candleBuilder)
             }
         }
-        activeCandles.clear()
     }
 
     companion object {

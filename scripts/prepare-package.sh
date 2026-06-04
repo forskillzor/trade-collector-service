@@ -23,22 +23,23 @@ echo "Using JAR file: $JAR_FILE (size: $(stat -c%s "$JAR_FILE") bytes)"
 cp "$JAR_FILE" deploy-package/trade-collector.jar
 echo "✅ JAR copied"
 
-# 3. Копируем продакшен-конфиг как config.json
-echo "📄 Copying config/production.json..."
-if [ -f "config/production.json" ]; then
-    cp config/production.json deploy-package/config.json
-    echo "✅ config/production.json → config.json"
-elif [ -f "config.json" ]; then
-    cp config.json deploy-package/
-    echo "⚠️ config/production.json not found, using config.json (dev config)"
+# 3. Копируем продакшен-конфиг
+echo "📄 Copying config/config.prod.json..."
+mkdir -p deploy-package/config
+if [ -f "config/config.prod.json" ]; then
+    cp config/config.prod.json deploy-package/config/config.prod.json
+    echo "✅ config/config.prod.json → deploy-package/config/config.prod.json"
+elif [ -f "config/production.json" ]; then
+    cp config/production.json deploy-package/config/config.prod.json
+    echo "✅ config/production.json → deploy-package/config/config.prod.json (legacy)"
 else
-    echo "❌ ERROR: No config file found!"
+    echo "❌ ERROR: No production config found!"
     exit 1
 fi
 
 # 4. Копируем ОБЯЗАТЕЛЬНЫЕ скрипты для сервера
 echo "📄 Copying server scripts..."
-MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "backup-db.sh" "verify-deployment.sh")
+MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "backup-db.sh" "verify-deployment.sh" "tune-postgres.sh")
 
 for script in "${MANDATORY_SCRIPTS[@]}"; do
     if [ -f "scripts/$script" ]; then
@@ -63,6 +64,12 @@ fi
 if [ -f "scripts/reset-database.sh" ]; then
     cp "scripts/reset-database.sh" deploy-package/
     echo "✅ reset-database.sh copied (manual use only)"
+fi
+
+# install-netdata.sh (опциональный мониторинг)
+if [ -f "scripts/install-netdata.sh" ]; then
+    cp "scripts/install-netdata.sh" deploy-package/
+    echo "✅ install-netdata.sh copied"
 fi
 
 # 6. Создаем файл README с инструкцией

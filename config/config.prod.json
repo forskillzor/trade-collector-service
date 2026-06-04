@@ -22,7 +22,7 @@
     "windowSize": 1000000,
     "slideStep": 100000,
     "filterPercentile": 0.98,
-    "timeframes": ["1m", "5m", "15m", "1h", "4h"]
+    "timeframes": ["1m", "15m"]
   },
   "export": {
     "enabled": true,

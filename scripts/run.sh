@@ -53,7 +53,7 @@ if [ ! -f "trade-collector.jar" ]; then
 fi
 
 # JVM параметры
-JVM_OPTS="-XX:+UseG1GC -Xmx512m -Xms256m"
+JVM_OPTS="-XX:+UseG1GC -Xmx768m -Xms512m -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/opt/trade-collector/logs/heapdump.hprof"
 
 echo ""
 echo "🚀 Starting application..."

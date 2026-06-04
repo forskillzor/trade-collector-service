@@ -31,6 +31,7 @@ class TradeProcessor(
     private var lastSecond = Instant.now().epochSecond
     private var lastTotalTrades = 0L
     private var lastCleanupTime = System.currentTimeMillis()
+    private var lastFlushTime = 0L
 
     // Статистика по инструментам
     private val instrumentStats = ConcurrentHashMap<String, InstrumentStats>()
@@ -101,8 +102,9 @@ class TradeProcessor(
                 }
 
                 // Флаш агрегатов каждые 10 минут
-                if (now % (10 * 60 * 1000) < 1000) {
+                if (now - lastFlushTime > 10 * 60 * 1000) {
                     aggregateProcessor.flushAll()
+                    lastFlushTime = now
                 }
             }
         } catch (e: Exception) {
