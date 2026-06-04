@@ -10,7 +10,7 @@ class BinanceAdapter : BaseExchangeAdapter("Binance") {
 
     override fun getCombinedStreamUrl(symbols: List<String>): String {
         val streams = symbols.joinToString("/") { "${it.lowercase()}@aggTrade" }
-        return "wss://fstream.binance.com/stream?streams=$streams"
+        return "wss://fstream.binance.com/market/stream?streams=$streams"
     }
 
     override fun getWebSocketUrl(symbol: String): String {
