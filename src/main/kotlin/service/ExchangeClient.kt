@@ -52,6 +52,7 @@ class ExchangeClient(
     private suspend fun connectAndListenCombined(url: String, client: HttpClient) {
         var reconnectAttempts = 0
         val maxReconnectDelay = 30000L
+        var frameCount = 0
 
         while (true) {
             try {
@@ -61,19 +62,26 @@ class ExchangeClient(
                 client.webSocket(url) {
                     log.info { "${config.name}: combined WebSocket connected (${config.symbols.size} pairs)" }
                     reconnectAttempts = 0
+                    frameCount = 0
 
                     for (frame in incoming) {
                         when (frame) {
                             is Frame.Text -> {
+                                frameCount++
                                 val text = frame.readText()
                                 val parsed = adapter.parseCombinedFrame(text)
                                 if (parsed == null) {
-                                    log.trace { "${config.name}: unparsed combined frame" }
+                                    if (frameCount <= 3) log.warn { "${config.name}: unparsed frame #$frameCount: $text" }
                                     continue
                                 }
                                 val (symbol, node) = parsed
 
-                                if (!adapter.isTradeMessageNode(node)) continue
+                                if (!adapter.isTradeMessageNode(node)) {
+                                    if (frameCount <= 3) log.warn { "${config.name}: non-trade frame #$frameCount, stream=$symbol" }
+                                    continue
+                                }
+
+                                if (frameCount <= 3) log.warn { "${config.name}: TRADE frame #$frameCount $symbol" }
 
                                 processor.process(node.toString(), config.name, symbol)
                             }
