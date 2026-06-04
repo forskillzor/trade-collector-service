@@ -66,12 +66,16 @@ class ExchangeClient(
                         when (frame) {
                             is Frame.Text -> {
                                 val text = frame.readText()
-                                val parsed = adapter.parseCombinedFrame(text) ?: continue
-                                val (symbol, data) = parsed
+                                val parsed = adapter.parseCombinedFrame(text)
+                                if (parsed == null) {
+                                    log.trace { "${config.name}: unparsed combined frame" }
+                                    continue
+                                }
+                                val (symbol, node) = parsed
 
-                                if (!adapter.isTradeMessage(data)) continue
+                                if (!adapter.isTradeMessageNode(node)) continue
 
-                                processor.process(data, config.name, symbol)
+                                processor.process(node.toString(), config.name, symbol)
                             }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"

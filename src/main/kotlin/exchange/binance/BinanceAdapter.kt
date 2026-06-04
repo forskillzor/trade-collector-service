@@ -2,6 +2,8 @@ package com.aandios.exchange.binance
 
 import com.aandios.exchange.BaseExchangeAdapter
 import com.aandios.model.Trade
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ObjectNode
 import java.math.BigDecimal
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
@@ -16,13 +18,32 @@ class BinanceAdapter : BaseExchangeAdapter("Binance") {
         return "wss://fstream.binance.com/market/ws/${symbol.lowercase()}@aggTrade"
     }
 
-    override fun parseCombinedFrame(json: String): Pair<String, String>? {
+    override fun parseCombinedFrame(json: String): Pair<String, JsonNode>? {
         return try {
             val root = mapper.readTree(json)
             val stream = root["stream"]?.asText() ?: return null
-            val data = root["data"] ?: return null
+            val data = root["data"] as? ObjectNode ?: return null
             val symbol = stream.removeSuffix("@aggTrade").uppercase()
-            symbol to mapper.writeValueAsString(data)
+            symbol to data
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override fun isTradeMessageNode(node: JsonNode): Boolean {
+        return node.has("e") && node["e"].asText() == "aggTrade"
+    }
+
+    override fun parseTradeNode(node: JsonNode, symbol: String): Trade? {
+        return try {
+            Trade(
+                exchange = name,
+                symbol = symbol.uppercase(),
+                timestamp = node["T"].asLong(),
+                price = BigDecimal(node["p"].asText()),
+                quantity = BigDecimal(node["q"].asText()),
+                isBuy = !node["m"].asBoolean()
+            )
         } catch (e: Exception) {
             null
         }
