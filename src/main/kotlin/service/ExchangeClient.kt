@@ -7,7 +7,6 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import mu.KotlinLogging
-import kotlin.time.Duration.Companion.seconds
 
 private val log = KotlinLogging.logger {}
 
@@ -38,7 +37,6 @@ class ExchangeClient(
         val client = HttpClient {
             install(WebSockets) {
                 maxFrameSize = Long.MAX_VALUE
-                pingInterval = 20.seconds
             }
         }
 
@@ -98,7 +96,6 @@ class ExchangeClient(
         val client = HttpClient {
             install(WebSockets) {
                 maxFrameSize = Long.MAX_VALUE
-                pingInterval = 20.seconds
             }
         }
 
