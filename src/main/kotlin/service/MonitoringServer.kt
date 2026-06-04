@@ -8,6 +8,7 @@ import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
+import io.ktor.server.http.content.*
 import io.ktor.server.jetty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
@@ -142,6 +143,7 @@ class MonitoringServer(
                             )
                             call.respondText(jmapper.writeValueAsString(data), ContentType.Application.Json)
                         }
+                        staticFiles("/", File("static"))
                     }
                 }
 
