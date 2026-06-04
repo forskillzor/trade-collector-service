@@ -14,9 +14,8 @@ dev-down:        ## Остановить PostgreSQL
 	$(COMPOSE) down
 
 dev-run:         ## Собрать и запустить сервис локально
-	@test -f config.json || (cp config/config.example.json config.json && echo "📄 config.json создан из config.example.json")
 	./gradlew shadowJar --no-daemon
-	DB_HOST=localhost DB_PORT=5432 DB_NAME=trade_collector DB_USER=trade_user DB_PASSWORD=dev_password java -jar build/libs/trade-collector.jar
+	DB_HOST=localhost DB_PORT=5432 DB_NAME=trade_collector DB_USER=trade_user DB_PASSWORD=dev_password APP_ENV=dev java -jar build/libs/trade-collector.jar
 
 dev-restart:     ## Перезапустить сервис (без пересборки)
 	DB_HOST=localhost DB_PORT=5432 DB_NAME=trade_collector DB_USER=trade_user DB_PASSWORD=dev_password java -jar build/libs/trade-collector.jar
