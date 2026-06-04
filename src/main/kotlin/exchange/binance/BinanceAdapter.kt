@@ -3,11 +3,10 @@ package com.aandios.exchange.binance
 import com.aandios.exchange.BaseExchangeAdapter
 import com.aandios.model.Trade
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.node.ObjectNode
 import java.math.BigDecimal
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
-    override fun supportsCombinedStream(): Boolean = false // TODO: debug combined parsing, use per-symbol for now
+    override fun supportsCombinedStream(): Boolean = true
 
     override fun getCombinedStreamUrl(symbols: List<String>): String {
         val streams = symbols.joinToString("/") { "${it.lowercase()}@aggTrade" }
@@ -22,7 +21,7 @@ class BinanceAdapter : BaseExchangeAdapter("Binance") {
         return try {
             val root = mapper.readTree(json)
             val stream = root["stream"]?.asText() ?: return null
-            val data = root["data"] as? ObjectNode ?: return null
+            val data = root["data"] ?: return null
             val symbol = stream.removeSuffix("@aggTrade").uppercase()
             symbol to data
         } catch (e: Exception) {
