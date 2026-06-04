@@ -49,10 +49,10 @@ data class DatabaseConfig(
 data class ProcessorConfig(
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000,
-    val windowSize: Int = 1000000,
-    val slideStep: Int = 100000,
+    val windowSize: Int = 10000,
+    val slideStep: Int = 1000,
     val filterPercentile: Double = 0.98,
-    val timeframes: List<String> = listOf("1m", "5m", "1h")
+    val timeframes: List<String> = listOf("1m", "15m")
 )
 
 @Serializable

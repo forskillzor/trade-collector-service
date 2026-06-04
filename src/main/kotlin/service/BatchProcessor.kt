@@ -67,16 +67,18 @@ class BatchProcessor(
     private val diskBuffer: DiskBuffer? = null
 ) {
     private val tradeQueues = ConcurrentHashMap<String, ConcurrentLinkedQueue<Trade>>()
+    private val flushLocks = ConcurrentHashMap<String, Any>()
     private val circuitBreaker = CircuitBreaker()
     private var isRunning = false
     private var job: Job? = null
+    private var flushScope: CoroutineScope? = null
 
     fun start(scope: CoroutineScope) {
         if (isRunning) return
 
         isRunning = true
+        flushScope = scope
 
-        // Replay pending disk buffer
         if (diskBuffer?.hasPending() == true) {
             log.info { "Replaying disk buffer..." }
             diskBuffer.replayTo(dao)
@@ -94,9 +96,13 @@ class BatchProcessor(
         val queue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
         queue.add(trade)
 
-        // Если очередь достигла размера батча - немедленная отправка
         if (queue.size >= batchSize) {
-            flushBatch(key)
+            val scope = flushScope
+            if (scope != null) {
+                scope.launch { flushBatch(key) }
+            } else {
+                flushBatch(key)
+            }
         }
     }
 
@@ -117,50 +123,51 @@ class BatchProcessor(
         }
     }
 
-    private fun flushBatch(key: String) = synchronized(tradeQueues) {
-        val queue = tradeQueues[key] ?: return
-        val batch = mutableListOf<Trade>()
+    private fun flushBatch(key: String) {
+        val lock = flushLocks.getOrPut(key) { Any() }
+        synchronized(lock) {
+            val queue = tradeQueues[key] ?: return
+            val batch = mutableListOf<Trade>()
 
-        // Копируем batch из очереди
-        while (batch.size < batchSize && queue.isNotEmpty()) {
-            val trade = queue.poll()
-            if (trade != null) {
-                batch.add(trade)
-            }
-        }
-
-        if (batch.isNotEmpty()) {
-            if (!circuitBreaker.isCallAllowed()) {
-                log.warn { "Circuit Breaker OPEN — saving ${batch.size} trades to disk for $key" }
-                diskBuffer?.saveBatch(batch)
-            } else {
-                try {
-                    dao.insertRawTradesBatch(batch)
-                    circuitBreaker.onSuccess()
-                    log.debug { "Inserted ${batch.size} trades for $key" }
-                } catch (e: Exception) {
-                    log.error(e) { "Batch insert error" }
-                    circuitBreaker.onFailure()
-                    batch.forEach { trade ->
-                        val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
-                        currentQueue.offer(trade)
-                    }
-                    return
+            while (batch.size < batchSize && queue.isNotEmpty()) {
+                val trade = queue.poll()
+                if (trade != null) {
+                    batch.add(trade)
                 }
             }
-        }
 
-        // Удаляем пустую очередь только после успешной вставки
-        if (queue.isEmpty()) {
-            tradeQueues.remove(key)
+            if (batch.isNotEmpty()) {
+                if (!circuitBreaker.isCallAllowed()) {
+                    log.warn { "Circuit Breaker OPEN — saving ${batch.size} trades to disk for $key" }
+                    diskBuffer?.saveBatch(batch)
+                } else {
+                    try {
+                        dao.insertRawTradesBatch(batch)
+                        circuitBreaker.onSuccess()
+                    } catch (e: Exception) {
+                        log.error(e) { "Batch insert error for $key" }
+                        circuitBreaker.onFailure()
+                        batch.forEach { trade ->
+                            val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
+                            currentQueue.offer(trade)
+                        }
+                        return
+                    }
+                }
+            }
+
+            if (queue.isEmpty()) {
+                tradeQueues.remove(key)
+                flushLocks.remove(key)
+            }
         }
     }
 
     fun stop() {
         isRunning = false
         job?.cancel()
+        flushScope = null
 
-        // Финальный flush оставшихся тиков
         tradeQueues.keys.forEach { key ->
             flushBatch(key)
         }

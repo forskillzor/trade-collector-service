@@ -100,6 +100,20 @@ class AggregateProcessor(
             if (candleBuilder == null || trade.timestamp >= candleBuilder.endTime) {
                 if (candleBuilder != null) {
                     saveAggregate(candleBuilder)
+
+                    val stepMs = timeframeStepMs(timeframe)
+                    var gapStart = candleBuilder.endTime
+                    while (gapStart < candleStart) {
+                        val gapEnd = gapStart + stepMs
+                        val gapCandle = AggregateCandleBuilder(
+                            exchange = trade.exchange,
+                            symbol = trade.symbol,
+                            timeframe = timeframe,
+                            startTime = gapStart
+                        )
+                        saveAggregate(gapCandle)
+                        gapStart = gapEnd
+                    }
                 }
 
                 candleBuilder = AggregateCandleBuilder(
@@ -151,15 +165,19 @@ class AggregateProcessor(
         }
 
         fun calculateEndTime(startTime: Long, timeframe: String): Long {
+            return startTime + timeframeStepMs(timeframe)
+        }
+
+        fun timeframeStepMs(timeframe: String): Long {
             return when (timeframe) {
-                "1m" -> startTime + 60000
-                "5m" -> startTime + 300000
-                "15m" -> startTime + 900000
-                "30m" -> startTime + 1800000
-                "1h" -> startTime + 3600000
-                "4h" -> startTime + 14400000
-                "1d" -> startTime + 86400000
-                else -> startTime + 60000
+                "1m" -> 60000
+                "5m" -> 300000
+                "15m" -> 900000
+                "30m" -> 1800000
+                "1h" -> 3600000
+                "4h" -> 14400000
+                "1d" -> 86400000
+                else -> 60000
             }
         }
     }

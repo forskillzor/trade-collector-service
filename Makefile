@@ -34,14 +34,16 @@ clean:           ## Очистить сборку
 
 # ===== БАЗА ДАННЫХ (локально) =====
 
-db-init:         ## Применить схему БД локально (без удаления данных)
+db-init:         ## Применить схему БД локально (uuid-ossp extension)
 	PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector -f sql/001_init_schema.sql
-	@echo "✅ Схема применена"
+	@echo "✅ Extension uuid-ossp создан (таблицы создадутся при запуске коллектора)"
 
 db-reset:        ## Полностью сбросить локальную БД
 	$(COMPOSE) down -v
 	$(COMPOSE) up -d
-	@echo "✅ БД пересоздана, схема применена автоматически"
+	@echo "⏳ Ожидание PostgreSQL..."
+	@until PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done
+	@echo "✅ БД пересоздана (таблицы создадутся автоматически при первом трейде)"
 
 db-psql:         ## Подключиться к локальной БД
 	PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector

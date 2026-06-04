@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import java.math.BigDecimal
 
 class BinanceAdapter : BaseExchangeAdapter("Binance") {
-    override fun supportsCombinedStream(): Boolean = true
+    override fun supportsCombinedStream(): Boolean = false
 
     override fun getCombinedStreamUrl(symbols: List<String>): String {
         val streams = symbols.joinToString("/") { "${it.lowercase()}@aggTrade" }

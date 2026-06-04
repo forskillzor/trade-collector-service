@@ -21,8 +21,8 @@
   "processor": {
     "batchSize": 1000,
     "flushIntervalMs": 1000,
-    "windowSize": 100000,
-    "slideStep": 10000,
+    "windowSize": 10000,
+    "slideStep": 1000,
     "filterPercentile": 0.98,
     "timeframes": ["1m", "15m"]
   },

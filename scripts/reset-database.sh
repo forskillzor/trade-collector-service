@@ -23,14 +23,13 @@ PG_PORT="${DB_PORT:-5432}"
 PG_USER="${DB_USER:-trade_user}"
 PG_NAME="${DB_NAME:-trade_collector}"
 
-DB_TABLES="raw_trades, filtered_trades, aggregates, volume_windows"
-
 cat << WARN
 ╔══════════════════════════════════════════════════════════╗
 ║ ⚠️  ВНИМАНИЕ: Полный сброс БД                           ║
 ║                                                        ║
-║ Будут удалены ВСЕ данные из таблиц:                     ║
-║   $DB_TABLES
+║ Будут удалены ВСЕ per-symbol таблицы:                  ║
+║   raw_trades_*, aggregates_*,                          ║
+║   filtered_trades_*, volume_windows_*                  ║
 ║                                                        ║
 ║ Бэкап будет создан автоматически перед сбросом.         ║
 ╚══════════════════════════════════════════════════════════╝
@@ -54,13 +53,31 @@ else
 fi
 
 echo ""
-echo "🗑️  Шаг 2/3: Удаляю таблицы..."
+echo "🗑️  Шаг 2/3: Удаляю per-symbol таблицы..."
 PGPASSWORD="$DB_PASSWORD" psql \
     -h "$PG_HOST" \
     -p "$PG_PORT" \
     -U "$PG_USER" \
     -d "$PG_NAME" \
-    -c "DROP TABLE IF EXISTS $DB_TABLES CASCADE;"
+    -c "
+DO \$\$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT tablename FROM pg_catalog.pg_tables
+        WHERE schemaname = 'public'
+          AND (tablename LIKE 'raw_trades_%'
+            OR tablename LIKE 'aggregates_%'
+            OR tablename LIKE 'filtered_trades_%'
+            OR tablename LIKE 'volume_windows_%')
+    LOOP
+        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+        RAISE NOTICE 'Dropped %', r.tablename;
+    END LOOP;
+END
+\$\$;
+"
 
 echo "✅ Таблицы удалены"
 

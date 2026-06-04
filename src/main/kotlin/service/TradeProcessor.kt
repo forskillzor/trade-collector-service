@@ -30,7 +30,6 @@ class TradeProcessor(
     private var tradesPerSecond = 0
     private var lastSecond = Instant.now().epochSecond
     private var lastTotalTrades = 0L
-    private var lastCleanupTime = System.currentTimeMillis()
     private var lastFlushTime = 0L
 
     // Статистика по инструментам
@@ -94,14 +93,8 @@ class TradeProcessor(
                     log.debug { "tick #$totalTrades | tps=${tradesPerSecond}/s | ${exchange}/${trade.symbol} price=${trade.price} vol=${trade.getVolumeUsd()} queue=${stats.batchQueueSize}" }
                 }
 
-                // Периодические операции
-                val now = System.currentTimeMillis()
-                if (now - lastCleanupTime > 5 * 60 * 1000) { // Каждые 5 минут
-                    cleanupOldData()
-                    lastCleanupTime = now
-                }
-
                 // Флаш агрегатов каждые 10 минут
+                val now = System.currentTimeMillis()
                 if (now - lastFlushTime > 10 * 60 * 1000) {
                     aggregateProcessor.flushAll()
                     lastFlushTime = now
@@ -125,18 +118,6 @@ class TradeProcessor(
             tradesPerSecond = (totalTrades - lastTotalTrades).toInt()
             lastTotalTrades = totalTrades
             lastSecond = currentSecond
-        }
-    }
-
-    private fun cleanupOldData() {
-        try {
-            // Очищаем сырые сделки (храним только ~1 миллион)
-            val deletedCount = dao.cleanupOldRawTrades()
-            if (deletedCount > 0) {
-                log.info { "Cleaned $deletedCount old raw_trades" }
-            }
-        } catch (e: Exception) {
-            log.error(e) { "Raw trades cleanup error" }
         }
     }
 
