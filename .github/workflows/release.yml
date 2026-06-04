@@ -73,7 +73,8 @@ jobs:
           ARCHIVE="trade-collector-${TAG}.tar.gz"
 
           echo "📥 Downloading $ARCHIVE from GitHub Release..."
-          curl -sL --retry 3 --retry-delay 5 \
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
             -o "/tmp/$ARCHIVE" \
             "https://github.com/${{ github.repository }}/releases/download/$TAG/$ARCHIVE"
 
@@ -85,7 +86,8 @@ jobs:
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "
             sudo mkdir -p /opt/trade-collector && sudo chown -R \$USER:\$USER /opt/trade-collector || { echo '❌ Cannot init /opt/trade-collector — add deploy to sudoers'; exit 1; }
             cd /opt/trade-collector || exit 1
-            tar -xzf /tmp/$ARCHIVE deploy-remote.sh || { echo '❌ Bad archive'; file /tmp/$ARCHIVE; exit 1; }
+            tar -tzf /tmp/$ARCHIVE deploy-remote.sh >/dev/null 2>&1 || { echo '❌ Archive not valid gzip (likely HTML from GitHub — check GITHUB_TOKEN scope)'; head -c 200 /tmp/$ARCHIVE; exit 1; }
+            tar -xzf /tmp/$ARCHIVE deploy-remote.sh
             bash deploy-remote.sh $TAG
           "
 
