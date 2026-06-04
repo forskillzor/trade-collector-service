@@ -76,31 +76,31 @@ class ExchangeClient(
                             is Frame.Text -> {
                                 frameCount++
                                 val text = frame.readText()
-                                if (frameCount <= 5) log.warn { "${config.name}: TEXT #$frameCount len=${text.length} raw=${text.take(200)}" }
+                                if (frameCount <= 5) log.debug { "${config.name}: TEXT #$frameCount len=${text.length}" }
                                 val parsed = adapter.parseCombinedFrame(text)
                                 if (parsed == null) {
-                                    if (frameCount <= 5) log.warn { "${config.name}: UNPARSED #$frameCount" }
+                                    if (frameCount <= 5) log.debug { "${config.name}: UNPARSED #$frameCount" }
                                     continue
                                 }
                                 val (symbol, node) = parsed
 
                                 if (!adapter.isTradeMessageNode(node)) {
-                                    if (frameCount <= 5) log.warn { "${config.name}: NON-TRADE #$frameCount $symbol" }
+                                    if (frameCount <= 5) log.debug { "${config.name}: NON-TRADE #$frameCount $symbol" }
                                     continue
                                 }
 
-                                if (frameCount <= 5) log.warn { "${config.name}: TRADE #$frameCount $symbol ticks=${node["T"]?.asLong()}" }
+                                if (frameCount <= 5) log.debug { "${config.name}: TRADE #$frameCount $symbol" }
 
                                 processor.process(node.toString(), config.name, symbol)
                             }
                             is Frame.Binary -> {
-                                if (frameCount <= 5) log.warn { "${config.name}: BINARY frame" }
+                                if (frameCount <= 5) log.debug { "${config.name}: BINARY frame" }
                             }
                             is Frame.Ping -> {
-                                if (frameCount <= 5) log.warn { "${config.name}: PING frame" }
+                                if (frameCount <= 5) log.debug { "${config.name}: PING frame" }
                             }
                             is Frame.Pong -> {
-                                if (frameCount <= 5) log.warn { "${config.name}: PONG frame" }
+                                if (frameCount <= 5) log.debug { "${config.name}: PONG frame" }
                             }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
@@ -108,7 +108,7 @@ class ExchangeClient(
                                 break
                             }
                             else -> {
-                                log.warn { "${config.name}: unknown frame type: ${frame::class.simpleName}" }
+                                log.debug { "${config.name}: unknown frame type: ${frame::class.simpleName}" }
                             }
                         }
                     }
