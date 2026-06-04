@@ -28,42 +28,25 @@
 
 ### 1. `config/config.prod.json` — monitoring host → localhost
 
-```
-"host": "0.0.0.0" → "host": "localhost"
-```
+`"host": "0.0.0.0"` → `"host": "localhost"`
 
 Мониторинг доступен через `ssh -L 8080:localhost:8080 vps`.
 
-### 2. `build.gradle.kts` + `Main.kt` — синхронизация версий
+### 2. `build.gradle.kts` — синхронизация версий
 
-```
-build.gradle.kts: version = "1.0-SNAPSHOT" → "2.0.0"
-Main.kt: НЕ МЕНЯТЬ (уже const val VERSION = "2.0.0")
-```
+`version = "1.0-SNAPSHOT"` → `version = "2.0.0"` (Main.kt уже `2.0.0`)
 
 ### 3. `ExchangeClient.kt` — дебаг-логи combined stream → DEBUG
 
-```
-log.warn → log.debug для первых 5 фреймов
-```
+`log.warn` → `log.debug` для первых 5 фреймов всех типов (TEXT, PING, PONG, BINARY). Оставлен `log.warn` только для детектора тишины (нет фреймов за 10 сек).
 
-### 4. Аудит synthesis-commit о тестах
-
-Обновлено ниже пункт 9
-
-```
-
-Yep. Final synth-commit from me on this thread — all Phase 3 changes from the production-readiness audit:
-
-### v2.0.0 Synth-commit:
-
-Что сделано и какая часть аудита закрыта:
+### 4. Аудит — итоговая таблица
 
 | Аудит | Закрыто | Пропущено (MVP) |
 |-------|---------|-----------------|
-| 5 CRITICAL | #2 открыт | #1 (bind localhost) |
-| 8 HIGH | #10, #32 закрыты | #6‑9,11‑13 |
-| 12 MEDIUM | #19,21‑22 закрыты | #14‑18,20,23‑25 |
-| 10 LOW | #28‑29,31 закрыты | #26‑27,30,33‑35 |
+| 5 CRITICAL | #3 (heap) | #1 (localhost), #2 (partitions), #4 (disk buffer limit), #5 (creds) |
+| 8 HIGH | #9, #10, #32 | #6‑8, #11‑13 |
+| 12 MEDIUM | #19, #21‑22 | #14‑18, #20, #23‑25 |
+| 10 LOW | #28‑29, #31 | #26‑27, #30, #33‑35 |
 
-Итог: **35 пунктов аудита рассмотрены. 32 исключены как нерелевантные для MVP. 2 активных пункта в плане.**
+**Итог:** 35 пунктов аудита рассмотрены. 32 исключены как нерелевантные для MVP. 3 активных пункта в плане.
