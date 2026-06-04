@@ -64,33 +64,52 @@ class ExchangeClient(
                     reconnectAttempts = 0
                     frameCount = 0
 
+                    // Diagnostic: warn if no frames after 10 seconds
+                    val diagJob = launch {
+                        delay(10_000)
+                        if (frameCount == 0) log.warn { "${config.name}: NO frames after 10s — WebSocket might be silent" }
+                    }
+
                     for (frame in incoming) {
+                        diagJob.cancel()
                         when (frame) {
                             is Frame.Text -> {
                                 frameCount++
                                 val text = frame.readText()
+                                if (frameCount <= 5) log.warn { "${config.name}: TEXT #$frameCount len=${text.length} raw=${text.take(200)}" }
                                 val parsed = adapter.parseCombinedFrame(text)
                                 if (parsed == null) {
-                                    if (frameCount <= 3) log.warn { "${config.name}: unparsed frame #$frameCount: $text" }
+                                    if (frameCount <= 5) log.warn { "${config.name}: UNPARSED #$frameCount" }
                                     continue
                                 }
                                 val (symbol, node) = parsed
 
                                 if (!adapter.isTradeMessageNode(node)) {
-                                    if (frameCount <= 3) log.warn { "${config.name}: non-trade frame #$frameCount, stream=$symbol" }
+                                    if (frameCount <= 5) log.warn { "${config.name}: NON-TRADE #$frameCount $symbol" }
                                     continue
                                 }
 
-                                if (frameCount <= 3) log.warn { "${config.name}: TRADE frame #$frameCount $symbol" }
+                                if (frameCount <= 5) log.warn { "${config.name}: TRADE #$frameCount $symbol ticks=${node["T"]?.asLong()}" }
 
                                 processor.process(node.toString(), config.name, symbol)
+                            }
+                            is Frame.Binary -> {
+                                if (frameCount <= 5) log.warn { "${config.name}: BINARY frame" }
+                            }
+                            is Frame.Ping -> {
+                                if (frameCount <= 5) log.warn { "${config.name}: PING frame" }
+                            }
+                            is Frame.Pong -> {
+                                if (frameCount <= 5) log.warn { "${config.name}: PONG frame" }
                             }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
                                 log.info { "${config.name}: combined connection closed ($reason)" }
                                 break
                             }
-                            else -> {}
+                            else -> {
+                                log.warn { "${config.name}: unknown frame type: ${frame::class.simpleName}" }
+                            }
                         }
                     }
                 }
