@@ -11,6 +11,12 @@ echo "═"$(printf '═%.0s' {1..50})
 echo "📦 Deploying $VERSION"
 echo "═"$(printf '═%.0s' {1..50})
 
+# --- Инициализация (первый деплой на чистом VPS) ---------------------------------
+if [ ! -d "$APP_DIR" ]; then
+    echo "🔧 Первый деплой: инициализирую $APP_DIR..."
+    sudo mkdir -p "$APP_DIR" && sudo chown -R "$(whoami):$(whoami)" "$APP_DIR"
+fi
+
 # --- Создать структуру директорий (работает и при первом деплое) ----------------
 mkdir -p "$APP_DIR/releases" "$APP_DIR/backups" "$APP_DIR/logs"
 

@@ -83,10 +83,9 @@ jobs:
 
           echo "🚀 Running deploy-remote.sh..."
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "
-            sudo install -d -o \$USER /opt/trade-collector 2>/dev/null || mkdir -p /opt/trade-collector || { echo '❌ Cannot create /opt/trade-collector'; exit 1; }
+            sudo mkdir -p /opt/trade-collector && sudo chown -R \$USER:\$USER /opt/trade-collector || { echo '❌ Cannot init /opt/trade-collector — add deploy to sudoers'; exit 1; }
             cd /opt/trade-collector || exit 1
-            file /tmp/$ARCHIVE
-            tar -xzf /tmp/$ARCHIVE deploy-remote.sh || { echo '❌ Bad archive, showing content type:'; file /tmp/$ARCHIVE; exit 1; }
+            tar -xzf /tmp/$ARCHIVE deploy-remote.sh || { echo '❌ Bad archive'; file /tmp/$ARCHIVE; exit 1; }
             bash deploy-remote.sh $TAG
           "
 
