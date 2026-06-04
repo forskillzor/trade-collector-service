@@ -43,23 +43,6 @@ class MonitoringServer(
                     install(ContentNegotiation) { json(json) }
 
                     routing {
-                        get("/") {
-                            call.respondText(
-                                """
-                                TradeCollectorService Monitoring
-                                ================================
-                                
-                                Endpoints:
-                                * /health     - Health check
-                                * /metrics    - Performance metrics
-                                * /status     - Service status
-                                * /exchanges  - Connected exchanges
-                                
-                                Version: ${BuildConfig.VERSION}
-                                """.trimIndent()
-                            )
-                        }
-
                         get("/health") {
                             val dbHealthy = tradeDAO.ping()
                             val wsConnected = exchangeClients.filter { it.isConnected() }.map { it.getName() }
@@ -143,7 +126,10 @@ class MonitoringServer(
                             )
                             call.respondText(jmapper.writeValueAsString(data), ContentType.Application.Json)
                         }
-                        staticFiles("/", File("static"))
+                        val staticDir = File("static")
+                        if (staticDir.exists()) {
+                            staticFiles("/", staticDir)
+                        }
                     }
                 }
 

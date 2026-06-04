@@ -60,6 +60,12 @@ if [ -f "sql/001_init_schema.sql" ]; then
     echo "✅ SQL schema copied"
 fi
 
+# Dashboard (Vue.js static)
+if [ -d "static" ]; then
+    cp -r static deploy-package/
+    echo "✅ Dashboard static files copied"
+fi
+
 # reset-database.sh (только для ручного сброса БД на VPS, не запускается автоматически)
 if [ -f "scripts/reset-database.sh" ]; then
     cp "scripts/reset-database.sh" deploy-package/
