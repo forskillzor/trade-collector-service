@@ -11,6 +11,9 @@ echo "═"$(printf '═%.0s' {1..50})
 echo "📦 Deploying $VERSION"
 echo "═"$(printf '═%.0s' {1..50})
 
+# --- Создать структуру директорий (работает и при первом деплое) ----------------
+mkdir -p "$APP_DIR/releases" "$APP_DIR/backups" "$APP_DIR/logs"
+
 # --- 1. Проверить архив -------------------------------------------------------
 ARCHIVE="/tmp/trade-collector-$VERSION.tar.gz"
 if [ ! -f "$ARCHIVE" ]; then
@@ -38,9 +41,18 @@ fi
 echo "✅ Конфигурация БД загружена"
 
 # --- 3. Бэкап БД --------------------------------------------------------------
-if [ "${SKIP_BACKUP:-false}" != "true" ] && [ -f "$APP_DIR/backup-db.sh" ]; then
+BACKUP_SCRIPT=""
+if [ -f "$APP_DIR/backup-db.sh" ]; then
+    BACKUP_SCRIPT="$APP_DIR/backup-db.sh"
+elif [ -f "$APP_DIR/current/backup-db.sh" ]; then
+    BACKUP_SCRIPT="$APP_DIR/current/backup-db.sh"
+fi
+
+if [ "${SKIP_BACKUP:-false}" != "true" ] && [ -n "$BACKUP_SCRIPT" ]; then
     echo "💾 Создаю бэкап БД..."
-    bash "$APP_DIR/backup-db.sh" || echo "⚠️ Бэкап не удался, продолжаю..."
+    bash "$BACKUP_SCRIPT" || echo "⚠️ Бэкап не удался, продолжаю..."
+elif [ "${SKIP_BACKUP:-false}" != "true" ]; then
+    echo "⏭️ Бэкап пропущен (первый деплой, backup-db.sh не найден)"
 else
     echo "⏭️ Бэкап пропущен (SKIP_BACKUP=$SKIP_BACKUP)"
 fi
@@ -66,26 +78,42 @@ echo "🛑 Останавливаю сервис..."
 systemctl stop trade-collector.service 2>/dev/null || true
 sleep 2
 
-# --- 7. Создать структуру если первый деплой ----------------------------------
-mkdir -p "$APP_DIR/releases" "$APP_DIR/backups" "$APP_DIR/logs"
-cp "$APP_DIR/backup-db.sh" "$APP_DIR/backup-db.sh" 2>/dev/null || true
+# --- 7. Установить/обновить systemd сервис (если ещё не) ------------------------
+if [ -f "$RELEASE_DIR/trade-collector.service" ]; then
+    if ! systemctl is-enabled trade-collector.service >/dev/null 2>&1; then
+        echo "🔧 Устанавливаю systemd сервис..."
+        cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
+        systemctl daemon-reload
+        systemctl enable trade-collector.service
+        echo "✅ Сервис установлен и включен"
+    else
+        cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
+        systemctl daemon-reload
+        echo "✅ Сервис обновлён"
+    fi
+fi
 
-# --- 8. Атомарно переключить symlink ------------------------------------------
+# --- 8. Скопировать скрипты в корень APP_DIR (для будущих деплоев) ------------
+echo "📋 Копирую скрипты в $APP_DIR/..."
+cp "$RELEASE_DIR"/*.sh "$APP_DIR/" 2>/dev/null || true
+echo "✅ Скрипты скопированы"
+
+# --- 9. Атомарно переключить symlink ------------------------------------------
 echo "🔗 Переключаю symlink: current → releases/$VERSION"
 ln -sfn "releases/$VERSION" "$APP_DIR/current"
 
-# --- 9. Применить миграции БД -------------------------------------------------
+# --- 10. Применить миграции БД -------------------------------------------------
 if [ -f "$RELEASE_DIR/init-database.sh" ]; then
     echo "🗄️ Применяю миграции БД..."
     cd "$RELEASE_DIR"
     bash init-database.sh || echo "⚠️ Миграции не применились, продолжаю..."
 fi
 
-# --- 10. Запустить сервис -----------------------------------------------------
+# --- 11. Запустить сервис -----------------------------------------------------
 echo "🚀 Запускаю сервис..."
 systemctl start trade-collector.service
 
-# --- 11. Health check с повторными попытками ----------------------------------
+# --- 12. Health check с повторными попытками ----------------------------------
 echo "🏥 Проверяю здоровье сервиса..."
 for i in $(seq 1 $HEALTH_RETRIES); do
     if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
@@ -114,7 +142,7 @@ for i in $(seq 1 $HEALTH_RETRIES); do
     sleep $HEALTH_DELAY
 done
 
-# --- 12. Очистка старых версий ------------------------------------------------
+# --- 13. Очистка старых версий ------------------------------------------------
 echo "🧹 Чищу старые релизы (оставляю 3 последних)..."
 ls -dt "$APP_DIR"/releases/*/ 2>/dev/null | tail -n +4 | while read old; do
     echo "   Удаляю: $old"

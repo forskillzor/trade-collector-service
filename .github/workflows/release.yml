@@ -82,10 +82,14 @@ jobs:
             $VPS_USER@$VPS_HOST:/tmp/
 
           echo "🚀 Running deploy-remote.sh..."
-          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
-            "cd /opt/trade-collector && bash deploy-remote.sh $TAG"
+          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "
+            mkdir -p /opt/trade-collector
+            cd /opt/trade-collector
+            tar -xzf /tmp/$ARCHIVE deploy-remote.sh
+            bash deploy-remote.sh $TAG
+          "
 
       - name: Verify
         run: |
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
-            "curl -sf http://localhost:8080/health && echo 'Health OK'"
+            "curl -sf --retry 3 --retry-delay 5 http://localhost:8080/health && echo 'Health OK'"

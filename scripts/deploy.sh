@@ -33,7 +33,7 @@ ssh -i "$SSH_KEY_FILE" "$VPS_USER@$VPS_HOST" "
   echo '🏠 Database: '\$DB_HOST:\$DB_PORT
 
   # Скачиваем и запускаем скрипт деплоя
-  curl -sL https://raw.githubusercontent.com/forskillzor/TradeCollectorService/master/scripts/deploy-remote.sh | bash
+  curl -sL https://raw.githubusercontent.com/forskillzor/TradeCollectorService/master/scripts/deploy-remote.sh | bash -s -- '$RELEASE_TAG'
 "
 
 echo "✅ Deployment of $RELEASE_TAG initiated!"
