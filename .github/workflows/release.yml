@@ -3,6 +3,13 @@ name: Release & Deploy
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.0.4)'
+        required: true
+        type: string
+        default: 'v0.0.4'
 
 jobs:
   build-and-release:
@@ -38,13 +45,14 @@ jobs:
       - name: Prepare package
         run: |
           chmod +x scripts/prepare-package.sh
-          ./scripts/prepare-package.sh "${{ github.ref_name }}"
+          ./scripts/prepare-package.sh "${{ inputs.tag || github.ref_name }}"
 
       - name: Set tag output
         id: tag
-        run: echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+        if: github.event_name != 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
           files: trade-collector-*.tar.gz
