@@ -205,7 +205,7 @@ class TradeDAO(
             val stmt = conn.createStatement()
             val rs = stmt.executeQuery("""
                 WITH cnt AS (SELECT COUNT(*) as total FROM ${tableName("raw_trades", symbol)})
-                SELECT total FROM cnt WHERE total > ${maxRows + 200_000}
+                SELECT total FROM cnt WHERE total > $maxRows
             """)
             if (!rs.next()) return 0
             val total = rs.getLong("total")
