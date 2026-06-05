@@ -18,7 +18,9 @@ body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono
 .header .status { font-size: 11px; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
 .dot.g { background: var(--green); } .dot.r { background: var(--red); } .dot.y { background: var(--yellow); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 10px; padding: 10px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 10px; padding: 10px; }
+.grid .wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 850px) { .grid .wide { grid-template-columns: 1fr; } }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
 .card h2 { font-size: 11px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; letter-spacing: 1px; }
 .card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 6px; text-transform: none; }
@@ -37,14 +39,13 @@ table { width: 100%; border-collapse: collapse; }
 td { padding: 2px 5px; font-size: 10px; }
 td:last-child { text-align: right; }
 .hist-wrap { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
-.hist-bar { width: 8px; height: 14px; border-radius: 2px; transition: background 0.3s; }
+.hist-bar { width: 8px; height: 14px; border-radius: 2px; }
 .hist-bar.g { background: var(--green); } .hist-bar.r { background: var(--red); } .hist-bar.x { background: var(--gray); }
-.sym-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--border); font-size: 10px; }
-.sym-row:last-child { border-bottom: none; }
+.sym-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 10px; }
 .sym-name { width: 80px; font-weight: bold; }
-.sym-trades { width: 50px; text-align: right; color: var(--blue); }
-.logs { max-height: 300px; overflow-y: auto; font-size: 10px; line-height: 1.3; }
-.logs .log-line { padding: 1px 0; white-space: pre-wrap; }
+.sym-trades { width: 55px; text-align: right; color: var(--blue); flex-shrink: 0; }
+.logs { max-height: 400px; overflow-y: auto; font-size: 10px; line-height: 1.3; word-break: break-all; }
+.logs .log-line { padding: 1px 0; }
 .footer { text-align: center; padding: 8px; color: var(--dim); font-size: 10px; }
 </style>
 </head>
@@ -53,8 +54,8 @@ td:last-child { text-align: right; }
   <div class="header">
     <h1>⬡ Trade Collector</h1>
     <div class="status">
-      <span :class="'dot ' + (state.healthColor=='green'?'g':state.healthColor=='yellow'?'y':'r')"></span>
-      {{ state.healthText }} · v{{ state.version }} · up {{ state.uptime }}
+      <span :class="'dot ' + (s.healthColor=='green'?'g':s.healthColor=='yellow'?'y':'r')"></span>
+      {{ s.healthText }} · v{{ s.version }} · up {{ s.uptime }}
     </div>
   </div>
 
@@ -62,60 +63,73 @@ td:last-child { text-align: right; }
     <!-- Health -->
     <div class="card">
       <h2>Health</h2>
-      <div class="row"><span class="lbl">Status</span><span :class="'val '+(healthColor=='green'?'g':healthColor=='yellow'?'y':'r')">{{ state.healthText }}</span></div>
-      <div class="row"><span class="lbl">Database</span><span :class="'val '+(dbHealthy?'g':'r')">{{ dbHealthy ? 'OK' : 'DOWN' }}</span></div>
-      <div class="row"><span class="lbl">WebSockets</span><span class="val">{{ state.wsConnected }}/{{ state.wsTotal }}</span></div>
-      <div class="row"><span class="lbl">Symbols</span><span class="val">{{ state.instruments.length }}</span></div>
+      <div class="row"><span class="lbl">Status</span><span :class="'val '+(s.healthColor=='green'?'g':s.healthColor=='yellow'?'y':'r')">{{ s.healthText }}</span></div>
+      <div class="row"><span class="lbl">Database</span><span :class="'val '+(s.dbHealthy?'g':'r')">{{ s.dbHealthy ? 'OK' : 'DOWN' }}</span></div>
+      <div class="row"><span class="lbl">WebSockets</span><span class="val">{{ s.wsConnected }}/{{ s.wsTotal }}</span></div>
+      <div class="row"><span class="lbl">Symbols active</span><span class="val">{{ activeCount }}</span></div>
     </div>
 
     <!-- Trades -->
     <div class="card">
-      <h2>Trades <span class="badge">{{ state.tps }}/s</span></h2>
+      <h2>Trades <span class="badge">{{ s.tps }}/s</span></h2>
       <div class="mgrid">
-        <div class="mbox"><div class="num">{{ fmt(total) }}</div><div class="lbl">Total</div></div>
-        <div class="mbox"><div class="num">{{ state.tps }}</div><div class="lbl">TPS</div></div>
-        <div class="mbox"><div class="num">{{ state.queue }}</div><div class="lbl">Queue</div></div>
-        <div class="mbox"><div class="num">{{ state.instruments.length }}</div><div class="lbl">Active sym</div></div>
+        <div class="mbox"><div class="num">{{ fmt(s.total) }}</div><div class="lbl">Total</div></div>
+        <div class="mbox"><div class="num">{{ s.tps }}</div><div class="lbl">TPS</div></div>
+        <div class="mbox"><div class="num">{{ s.queue }}</div><div class="lbl">Queue</div></div>
+        <div class="mbox"><div class="num">{{ activeCount }}</div><div class="lbl">Active sym</div></div>
       </div>
     </div>
 
     <!-- System -->
     <div class="card">
-      <h2>System <span class="badge">{{ state.cores }} core</span></h2>
-      <div class="row"><span class="lbl">Load</span><span class="val">{{ state.loadStr }}</span></div>
-      <div class="bar"><div class="bar-f" :class="loadColor" :style="{width: loadPct+'%'}"></div></div>
-      <div class="row"><span class="lbl">Heap</span><span class="val">{{ state.heapUsed }} / {{ state.heapMax }} MB</span></div>
-      <div class="bar"><div class="bar-f" :class="heapColor" :style="{width: heapPct+'%'}"></div></div>
-      <div class="row"><span class="lbl">Non-Heap</span><span class="val">{{ state.nonHeap }} MB</span></div>
-      <div class="row"><span class="lbl">Disk</span><span class="val">{{ state.diskFree }} / {{ state.diskTotal }} MB</span></div>
-      <div class="bar"><div class="bar-f" :class="diskColor" :style="{width: diskPct+'%'}"></div></div>
+      <h2>System <span class="badge">{{ s.cores }} core</span></h2>
+      <div class="row"><span class="lbl">Load</span><span class="val">{{ s.loadStr }}</span></div>
+      <div class="bar"><div class="bar-f" :class="s.loadColor" :style="{width: s.loadPct + '%'}"></div></div>
+      <div class="row"><span class="lbl">Heap</span><span class="val">{{ s.heapUsed }} / {{ s.heapMax }} MB</span></div>
+      <div class="bar"><div class="bar-f" :class="s.heapColor" :style="{width: s.heapPct + '%'}"></div></div>
+      <div class="row"><span class="lbl">Non-Heap</span><span class="val">{{ s.nonHeap }} MB</span></div>
+      <div class="row"><span class="lbl">Disk</span><span class="val">{{ s.diskFree }} / {{ s.diskTotal }} MB</span></div>
+      <div class="bar"><div class="bar-f" :class="s.diskColor" :style="{width: s.diskPct + '%'}"></div></div>
     </div>
 
-    <!-- Instruments -->
+    <!-- Database -->
     <div class="card">
-      <h2>Instruments <span class="badge">{{ state.instruments.length }} total</span></h2>
-      <div style="max-height:340px;overflow-y:auto">
-        <div class="sym-row" v-for="ins in state.instruments" :key="ins.symbol">
-          <span class="sym-name">{{ ins.symbol }}</span>
-          <div class="hist-wrap" :title="ins.symbol+' last 60min'">
-            <span v-for="(h,i) in (ins.history||[])" :key="i"
+      <h2>Database</h2>
+      <table>
+        <tr v-for="(v,k) in s.dbCounts" :key="k">
+          <td>{{ k }}</td><td>{{ fmt(v) }}</td>
+        </tr>
+      </table>
+      <div class="row" style="margin-top:6px"><span class="lbl">Total size</span><span class="val">{{ s.dbSizeMB }} MB</span></div>
+    </div>
+  </div>
+
+  <!-- Instruments + Logs (50/50) -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 10px 10px">
+    <div class="card">
+      <h2>Instruments <span class="badge">{{ symbols.length }} total · green=agg red=raw gray=none</span></h2>
+      <div style="max-height:420px;overflow-y:auto">
+        <div class="sym-row" v-for="sym in symbols" :key="sym.name">
+          <span class="sym-name">{{ sym.name }}</span>
+          <div class="hist-wrap" :title="sym.name">
+            <span v-for="(h,i) in sym.history" :key="i"
               :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
               :title="fmtMin(h.minute)+': '+(h.hasAgg?'agg':h.hasRaw?'raw':'none')"></span>
           </div>
-          <span class="sym-trades">{{ fmt(ins.totalTrades) }}</span>
+          <span class="sym-trades">{{ fmt(sym.trades) }}</span>
         </div>
       </div>
     </div>
 
-    <!-- Logs -->
     <div class="card">
-      <h2>Logs <span class="badge">{{ state.logs.length }} lines</span></h2>
+      <h2>Logs <span class="badge">{{ s.logs.length }} lines</span></h2>
       <div class="logs" ref="logsEl">
-        <div class="log-line" v-for="(l,i) in state.logs" :key="i">{{ l }}</div>
+        <div class="log-line" v-for="(l,i) in s.logs" :key="i">{{ l }}</div>
       </div>
     </div>
   </div>
-  <div class="footer">auto-refresh 5s · {{ state.now }}</div>
+
+  <div class="footer">auto-refresh 5s · {{ s.now }}</div>
 </div>
 
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -125,13 +139,17 @@ const { createApp, ref, nextTick, watch, reactive } = Vue;
 createApp({
   setup() {
     const logsEl = ref(null);
-    const state = reactive({
+    const s = reactive({
       healthText:'loading',healthColor:'yellow',dbHealthy:false,wsConnected:0,wsTotal:0,version:'',uptime:'',
       total:0,tps:0,queue:0,cores:0,loadStr:'0',loadPct:0,loadColor:'g',
       heapUsed:0,heapMax:1,nonHeap:0,heapPct:0,heapColor:'g',
       diskTotal:0,diskFree:0,diskPct:0,diskColor:'g',
-      instruments:[],logs:[],now:''
+      dbCounts:{},dbSizeMB:0,logs:[],now:''
     });
+    const symMap = reactive({});
+    const symbols = ref([]);
+    const activeCount = ref(0);
+    let historyBusy = 0;
 
     function fmt(n) { return !n&&n!==0?'—':Number(n).toLocaleString(); }
     function fmtMin(ts) { if(!ts) return ''; const d=new Date(ts); return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0'); }
@@ -145,74 +163,97 @@ createApp({
           fetch('/api/logs').then(r=>r.json()),
           fetch('/api/instruments').then(r=>r.json())
         ]);
-        const h=health||{}, s=status||{};
+        const h=health||{}, st=status||{};
 
-        state.healthText=h.status||'unknown';
-        state.healthColor=h.status==='healthy'?'green':h.status==='degraded'?'yellow':'red';
-        state.dbHealthy=h.checks?.database==='ok';
-        state.wsConnected=h.checks?.websockets?.connected??0;
-        state.wsTotal=h.checks?.websockets?.total??0;
-        state.version=s.version||'—';
-        state.uptime=fmUp(s.uptime);
-        state.total=s.metrics?.totalTrades??0;
-        state.tps=s.metrics?.tradesPerSecond??0;
-        state.queue=s.metrics?.batchQueueSize??0;
+        s.healthText=h.status||'unknown';
+        s.healthColor=h.status==='healthy'?'green':h.status==='degraded'?'yellow':'red';
+        s.dbHealthy=h.checks?.database==='ok';
+        s.wsConnected=h.checks?.websockets?.connected??0;
+        s.wsTotal=h.checks?.websockets?.total??0;
+        s.version=st.version||'—';
+        s.uptime=fmUp(st.uptime);
+        s.total=st.metrics?.totalTrades??0;
+        s.tps=st.metrics?.tradesPerSecond??0;
+        s.queue=st.metrics?.batchQueueSize??0;
 
-        const sy=s.system||{};
-        state.cores=sy.availableProcessors??'—';
+        const sy=st.system||{};
+        s.cores=sy.availableProcessors??'—';
         const ld=(sy.loadAverage??0);
-        state.loadStr=Number(ld).toFixed(2);
-        state.loadPct=Math.min(100,(ld/(state.cores||1)*100));
-        state.loadColor=state.loadPct>80?'r':state.loadPct>50?'y':'g';
+        s.loadStr=Number(ld).toFixed(2);
+        s.loadPct=Math.min(100,(ld/(s.cores||1)*100));
+        s.loadColor=s.loadPct>80?'r':s.loadPct>50?'y':'g';
 
         const m=sy.memory||{};
-        state.heapUsed=m.heapUsedMB??0; state.heapMax=m.heapMaxMB??1; state.nonHeap=m.nonHeapUsedMB??0;
-        state.heapPct=Math.min(100,(state.heapUsed/state.heapMax*100)||0);
-        state.heapColor=state.heapPct>80?'r':state.heapPct>60?'y':'g';
+        s.heapUsed=m.heapUsedMB??0; s.heapMax=m.heapMaxMB??1; s.nonHeap=m.nonHeapUsedMB??0;
+        s.heapPct=Math.min(100,(s.heapUsed/s.heapMax*100)||0);
+        s.heapColor=s.heapPct>80?'r':s.heapPct>60?'y':'g';
 
         const dk=sy.disk||{};
-        state.diskTotal=dk.totalMB??0; state.diskFree=dk.freeMB??0;
-        state.diskPct=dk.usedPercent??0;
-        state.diskColor=state.diskPct>80?'r':state.diskPct>60?'y':'g';
+        s.diskTotal=dk.totalMB??0; s.diskFree=dk.freeMB??0;
+        s.diskPct=dk.usedPercent??0;
+        s.diskColor=s.diskPct>80?'r':s.diskPct>60?'y':'g';
 
-        state.logs=Array.isArray(ilogs)?ilogs:[];
+        const db=st.database||{};
+        s.dbCounts={
+          rawTrades: db.rawTrades??0,
+          aggregates: db.aggregates??0,
+          windows: db.windows??0
+        };
+        s.dbSizeMB=db.dbSizeMB??'—';
 
+        s.logs=Array.isArray(ilogs)?ilogs:[];
+
+        // update instruments in-place (smooth)
         const instruments=Array.isArray(inst)?inst:[];
         const xs=Array.isArray(ex)?ex:[];
-        const allSym=xs.flatMap(x=>x.symbols.map(s=>s.toUpperCase()));
-        const merged=allSym.map(sym=>{
-          const found=instruments.find(i=>i.symbol===sym);
-          return {...(found||{}),symbol:sym,totalTrades:found?.totalTrades??0,history:found?.history||[]};
-        });
-        state.instruments=merged;
+        const allSym=xs.flatMap(x=>x.symbols.map(sym=>sym.toUpperCase())).sort();
+        let act=0;
 
-        // fetch history per symbol
-        merged.forEach((ins,idx)=>{
-          fetch('/api/history/'+ins.symbol+'?minutes=60').then(r=>r.json()).then(hist=>{
-            if(Array.isArray(hist)) state.instruments[idx].history=hist;
-          }).catch(()=>{});
+        const nowList = new Set();
+        allSym.forEach(symName => {
+          const found = instruments.find(i=>i.symbol===symName);
+          if (!symMap[symName]) {
+            symMap[symName] = reactive({name:symName, trades:0, history:[]});
+          }
+          symMap[symName].trades = found?.totalTrades ?? 0;
+          if ((found?.totalTrades??0) > 0) act++;
+          nowList.add(symName);
         });
+        activeCount.value = act;
+        // remove stale
+        Object.keys(symMap).forEach(k => { if (!nowList.has(k)) delete symMap[k]; });
+        symbols.value = Object.values(symMap);
 
-        state.now=new Date().toLocaleTimeString();
+        // fetch history (rate-limited: 1 batch per refresh cycle)
+        if (historyBusy <= 0) {
+          historyBusy = 1;
+          allSym.forEach(symName => {
+            fetch('/api/history/'+symName+'?minutes=60').then(r=>r.json()).then(hist=>{
+              if (Array.isArray(hist) && symMap[symName]) symMap[symName].history = hist;
+            }).catch(()=>{}).finally(()=>{ historyBusy--; });
+          });
+        }
+
+        s.now=new Date().toLocaleTimeString();
       } catch(e) { console.warn('fetch err',e); }
     }
 
     function fmUp(ms) {
       if(!ms) return '—';
-      const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);
-      if(h>0) return h+'h '+(m%60)+'m';
-      if(m>0) return m+'m '+(s%60)+'s';
-      return s+'s';
+      const ss=Math.floor(ms/1000),mm=Math.floor(ss/60),hh=Math.floor(mm/60);
+      if(hh>0) return hh+'h '+(mm%60)+'m';
+      if(mm>0) return mm+'m '+(ss%60)+'s';
+      return ss+'s';
     }
 
     fetchData();
     setInterval(fetchData, 5000);
 
-    watch(() => state.logs.length, () => {
+    watch(() => s.logs.length, () => {
       nextTick(() => { const el=logsEl.value; if(el) el.scrollTop=el.scrollHeight; });
     });
 
-    return { state, fmt, fmtMin, logsEl };
+    return { s, symbols, activeCount, fmt, fmtMin, logsEl };
   }
 }).mount('#app');
 </script>
