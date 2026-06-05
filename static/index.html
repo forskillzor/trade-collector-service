@@ -200,12 +200,12 @@ createApp({
         s.queue=st.metrics?.batchQueueSize??0;
 
         const sy=st.system||{};
-        const cores = Number(sy.availableProcessors) || 1;
+        const cores = Math.max(Number(sy.availableProcessors) || 1, 1);
         s.cores = cores;
         const ld = Number(sy.loadAverage) || 0;
         s.loadStr = ld.toFixed(2);
-        s.loadPct = Math.min(100, (ld / cores * 50));  // load % = load/cores*50 (rough)
-        s.loadColor = s.loadPct > 80 ? 'r' : s.loadPct > 40 ? 'y' : 'g';
+        s.loadPct = Math.min(100, Math.round(ld / cores * 100));
+        s.loadColor = s.loadPct > 80 ? 'r' : s.loadPct > 50 ? 'y' : 'g';
 
         const m=sy.memory||{};
         s.heapUsed = m.heapUsedMB ?? 0;
