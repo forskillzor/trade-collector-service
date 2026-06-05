@@ -34,19 +34,29 @@ jobs:
           ARCHIVE="trade-collector-${TAG}.tar.gz"
           echo "🔍 Downloading asset: $ARCHIVE"
 
-          curl -sL \
+          RELEASE_JSON=$(curl -fsS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+
+          ASSET_ID=$(echo "$RELEASE_JSON" | jq -r '.assets[]? | select(.name == "'"$ARCHIVE"'") | .id')
+
+          if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
+            echo "❌ Asset '$ARCHIVE' not found in release $TAG"
+            echo "Release assets:"
+            echo "$RELEASE_JSON" | jq -r '.assets[]?.name // "NO ASSETS IN RELEASE"'
+            echo ""
+            echo "💡 Did you push the tag? Run: git tag $TAG && git push origin $TAG"
+            exit 1
+          fi
+
+          curl -fsSL \
             -H "Accept: application/octet-stream" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -o "/tmp/$ARCHIVE" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$( \
-              curl -s \
-                -H "Authorization: Bearer $GITHUB_TOKEN" \
-                "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
-                | jq -r '.assets[] | select(.name == "'"$ARCHIVE"'") | .id' \
-            )"
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
 
           if [ ! -s "/tmp/$ARCHIVE" ]; then
-            echo "❌ Failed to download archive or file is empty"
+            echo "❌ Downloaded file is empty"
             exit 1
           fi
 
