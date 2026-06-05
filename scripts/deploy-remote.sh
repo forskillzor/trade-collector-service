@@ -106,7 +106,8 @@ echo "✅ Скрипты скопированы"
 
 # --- 9. Атомарно переключить symlink ------------------------------------------
 echo "🔗 Переключаю symlink: current → releases/$VERSION"
-ln -sfn "releases/$VERSION" "$APP_DIR/current"
+rm -f "$APP_DIR/current" 2>/dev/null || sudo rm -f "$APP_DIR/current" 2>/dev/null
+ln -sfn "releases/$VERSION" "$APP_DIR/current" 2>/dev/null || sudo ln -sfn "releases/$VERSION" "$APP_DIR/current"
 
 # --- 10. Применить миграции БД -------------------------------------------------
 if [ -f "$RELEASE_DIR/init-database.sh" ]; then

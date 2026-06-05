@@ -137,10 +137,7 @@ class AggregateProcessor(
     }
 
     fun flushAll() {
-        val snapshot = activeCandles.toMap()
-        activeCandles.clear()
-
-        snapshot.values.forEach { timeframeCandles ->
+        activeCandles.values.forEach { timeframeCandles ->
             timeframeCandles.values.forEach { candleBuilder ->
                 saveAggregate(candleBuilder)
             }
