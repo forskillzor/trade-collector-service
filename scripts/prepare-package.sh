@@ -39,7 +39,7 @@ fi
 
 # 4. Копируем ОБЯЗАТЕЛЬНЫЕ скрипты для сервера
 echo "📄 Copying server scripts..."
-MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "backup-db.sh" "verify-deployment.sh" "tune-postgres.sh")
+MANDATORY_SCRIPTS=("trade-collector.service" "run.sh" "init-database.sh" "deploy-remote.sh" "backup-db.sh" "verify-deployment.sh" "tune-postgres.sh" "setup-vps.sh")
 
 for script in "${MANDATORY_SCRIPTS[@]}"; do
     if [ -f "scripts/$script" ]; then
@@ -64,12 +64,6 @@ fi
 if [ -d "static" ]; then
     cp -r static deploy-package/
     echo "✅ Dashboard static files copied"
-fi
-
-# setup-vps.sh (bootstrap для голого VPS)
-if [ -f "scripts/setup-vps.sh" ]; then
-    cp "scripts/setup-vps.sh" deploy-package/
-    echo "✅ setup-vps.sh copied (VPS bootstrap)"
 fi
 
 # reset-database.sh (только для ручного сброса БД на VPS, не запускается автоматически)

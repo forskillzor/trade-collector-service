@@ -1,30 +1,34 @@
-.PHONY: help dev-up dev-down dev-run dev-restart test lint build clean db-init db-reset
+.PHONY: help dev-up dev-down dev-run dev-restart test build clean db-init db-reset db-psql
 
 DOCKER := $(shell command -v docker 2>/dev/null)
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+-include .env
+export
+
+DB_HOST ?= localhost
+DB_PORT ?= 5432
+DB_NAME ?= trade_collector
+DB_USER ?= trade_user
+DB_PASSWORD ?= dev_password
 
 # ===== ЛОКАЛЬНАЯ РАЗРАБОТКА =====
 
 dev-up:          ## Запустить PostgreSQL локально
 	$(COMPOSE) up -d
-	@echo "✅ PostgreSQL запущен на localhost:5432"
-	@echo "   БД: trade_collector | Пользователь: trade_user | Пароль: dev_password"
+	@echo "✅ PostgreSQL запущен на $(DB_HOST):$(DB_PORT)"
+	@echo "   БД: $(DB_NAME) | Пользователь: $(DB_USER)"
 
 dev-down:        ## Остановить PostgreSQL
 	$(COMPOSE) down
 
-dev-run:         ## Собрать и запустить сервис локально
-	./gradlew shadowJar --no-daemon
-	DB_HOST=localhost DB_PORT=5432 DB_NAME=trade_collector DB_USER=trade_user DB_PASSWORD=dev_password APP_ENV=dev java -jar build/libs/trade-collector.jar
+dev-run: build   ## Собрать и запустить сервис локально
+	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_NAME=$(DB_NAME) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) APP_ENV=dev java -jar build/libs/trade-collector.jar
 
 dev-restart:     ## Перезапустить сервис (без пересборки)
-	DB_HOST=localhost DB_PORT=5432 DB_NAME=trade_collector DB_USER=trade_user DB_PASSWORD=dev_password java -jar build/libs/trade-collector.jar
+	DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_NAME=$(DB_NAME) DB_USER=$(DB_USER) DB_PASSWORD=$(DB_PASSWORD) APP_ENV=dev java -jar build/libs/trade-collector.jar
 
 test:            ## Прогнать тесты
 	./gradlew test --no-daemon
-
-lint:            ## Проверить код (нужен ktlint в build.gradle.kts)
-	./gradlew ktlintCheck --no-daemon
 
 build:           ## Собрать shadowJar
 	./gradlew shadowJar --no-daemon
@@ -35,18 +39,18 @@ clean:           ## Очистить сборку
 # ===== БАЗА ДАННЫХ (локально) =====
 
 db-init:         ## Применить схему БД локально (uuid-ossp extension)
-	PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector -f sql/001_init_schema.sql
+	PGPASSWORD=$(DB_PASSWORD) psql -h $(DB_HOST) -U $(DB_USER) -d $(DB_NAME) -f sql/001_init_schema.sql
 	@echo "✅ Extension uuid-ossp создан (таблицы создадутся при запуске коллектора)"
 
 db-reset:        ## Полностью сбросить локальную БД
 	$(COMPOSE) down -v
 	$(COMPOSE) up -d
 	@echo "⏳ Ожидание PostgreSQL..."
-	@until PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done
+	@until PGPASSWORD=$(DB_PASSWORD) psql -h $(DB_HOST) -U $(DB_USER) -d $(DB_NAME) -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done
 	@echo "✅ БД пересоздана (таблицы создадутся автоматически при первом трейде)"
 
 db-psql:         ## Подключиться к локальной БД
-	PGPASSWORD=dev_password psql -h localhost -U trade_user -d trade_collector
+	PGPASSWORD=$(DB_PASSWORD) psql -h $(DB_HOST) -U $(DB_USER) -d $(DB_NAME)
 
 # ===== ПРОЧЕЕ =====
 

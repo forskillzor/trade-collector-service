@@ -2,7 +2,9 @@
   "exchanges": [
     {
       "name": "Binance",
-      "symbols": ["btcusdt", "ethusdt", "solusdt", "adausdt", "dotusdt"],
+      "symbols": ["btcusdt", "ethusdt", "bnbusdt", "xrpusdt", "solusdt", "trxusdt", "hypeusdt", "dogeusdt", "zecusdt",
+        "adausdt", "xlmusdt", "linkusdt", "bchusdt", "tonusdt", "musdt", "ltcusdt", "avaxusdt", "suiusdt", "dotusdt",
+        "daiusdt"],
       "enabled": true
     }
   ],

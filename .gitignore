@@ -50,3 +50,6 @@ bin/
 logs/
 exports/
 backups/
+deploy-package/
+*.tar.gz
+.deploy.env
