@@ -142,6 +142,8 @@ class ExchangeClient(
     private suspend fun connectAndListen(url: String, symbol: String, client: HttpClient) {
         var reconnectAttempts = 0
         val maxReconnectDelay = 30000L
+        var frameCount = 0
+        val silenceTimeoutMs = 60_000L
 
         while (true) {
             try {
@@ -150,6 +152,17 @@ class ExchangeClient(
 
                 client.webSocket(url) {
                     log.info { "${config.name}/$symbol: WebSocket connected" }
+                    reconnectAttempts = 0
+                    frameCount = 0
+
+                    // Silence watchdog: if no frames for silenceTimeoutMs, force reconnect
+                    val watchdog = launch {
+                        delay(silenceTimeoutMs)
+                        if (frameCount == 0) {
+                            log.warn { "${config.name}/$symbol: NO frames after ${silenceTimeoutMs / 1000}s — forcing reconnect" }
+                            cancel("Silence timeout")
+                        }
+                    }
 
                     // Отправляем подписку если требуется
                     adapter.getSubscribeMessage(symbol)?.let { message ->
@@ -157,11 +170,11 @@ class ExchangeClient(
                         log.debug { "${config.name}/$symbol: subscribed" }
                     }
 
-                    reconnectAttempts = 0
-
                     for (frame in incoming) {
+                        watchdog.cancel()
                         when (frame) {
                             is Frame.Text -> {
+                                frameCount++
                                 val text = frame.readText()
 
                                 // Фильтруем служебные сообщения
@@ -179,10 +192,11 @@ class ExchangeClient(
                             else -> {}
                         }
                     }
+                    watchdog.cancel()
                 }
             } catch (e: Exception) {
                 val delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
-                log.warn { "${config.name}/$symbol: error, reconnecting in ${delayMs / 1000}s" }
+                log.warn { "${config.name}/$symbol: error (${e.message}), reconnecting in ${delayMs / 1000}s" }
                 delay(delayMs)
             }
         }
