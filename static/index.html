@@ -22,6 +22,8 @@ body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
 .card h2 { font-size: 11px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; letter-spacing: 1px; }
 .card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 6px; text-transform: none; }
+.wide-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 10px 10px; }
+@media (max-width: 760px) { .wide-row { grid-template-columns: 1fr; } }
 .row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--border); }
 .row:last-child { border-bottom: none; }
 .lbl { color: var(--dim); }
@@ -104,8 +106,8 @@ td:last-child { text-align: right; }
     </div>
   </div>
 
-  <!-- Instruments + Logs (50/50) -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 10px 10px">
+  <!-- Instruments + Logs (50/50 desktop, stacked mobile) -->
+  <div class="wide-row">
     <div class="card">
       <h2>Instruments <span class="badge">{{ symbols.length }} total · green=agg red=raw gray=none</span></h2>
       <div style="max-height:420px;overflow-y:auto" ref="instScroll">
@@ -132,9 +134,6 @@ td:last-child { text-align: right; }
       </div>
     </div>
   </div>
-
-  <div class="footer">auto-refresh 5s · {{ s.now }}</div>
-</div>
 
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script>
