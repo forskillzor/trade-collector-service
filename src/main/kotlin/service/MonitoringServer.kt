@@ -4,6 +4,7 @@ import com.aandios.BuildConfig
 import com.aandios.config.ConfigManager
 import com.aandios.storage.postgres.TradeDAO
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.sun.management.OperatingSystemMXBean
 import io.ktor.http.ContentType
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -22,6 +23,14 @@ import java.lang.management.ManagementFactory
 private val log = KotlinLogging.logger {}
 private val json = Json { prettyPrint = true }
 private val jmapper = jacksonObjectMapper()
+
+private val osMxBean: OperatingSystemMXBean? =
+    (ManagementFactory.getOperatingSystemMXBean() as? OperatingSystemMXBean)
+// Warm up: first call to getSystemCpuLoad always returns -1
+private val osBeanWarmed: Boolean by lazy {
+    osMxBean?.systemCpuLoad
+    true
+}
 
 class MonitoringServer(
     private val port: Int = 8080,
@@ -78,6 +87,10 @@ class MonitoringServer(
                             val osBean = ManagementFactory.getOperatingSystemMXBean()
                             val memoryBean = ManagementFactory.getMemoryMXBean()
 
+                            // systemCpuLoad: first call returns -1, subsequent calls 0.0-1.0
+                            osBeanWarmed
+                            val cpuLoad = osMxBean?.systemCpuLoad?.let { if (it < 0) null else it }
+
                             val diskRoot = File("/")
                             val diskTotalMB = diskRoot.totalSpace / 1024 / 1024
                             val diskFreeMB = diskRoot.freeSpace / 1024 / 1024
@@ -93,7 +106,7 @@ class MonitoringServer(
                                 "metrics" to metrics,
                                 "system" to mapOf(
                                     "availableProcessors" to runtime.availableProcessors(),
-                                    "loadAverage" to osBean.systemLoadAverage,
+                                    "cpuLoad" to cpuLoad,
                                     "memory" to mapOf(
                                         "totalMB" to runtime.totalMemory() / 1024 / 1024,
                                         "freeMB" to runtime.freeMemory() / 1024 / 1024,

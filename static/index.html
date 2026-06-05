@@ -202,9 +202,14 @@ createApp({
         const sy=st.system||{};
         const cores = Math.max(Number(sy.availableProcessors) || 1, 1);
         s.cores = cores;
-        const ld = Number(sy.loadAverage) || 0;
-        s.loadStr = ld.toFixed(2);
-        s.loadPct = Math.min(100, Math.round(ld / cores * 100));
+        const cl = sy.cpuLoad;
+        if (cl != null && cl >= 0) {
+            s.loadStr = (cl * 100).toFixed(1) + '%';
+            s.loadPct = Math.round(cl * 100);
+        } else {
+            s.loadStr = '—';
+            s.loadPct = 0;
+        }
         s.loadColor = s.loadPct > 80 ? 'r' : s.loadPct > 50 ? 'y' : 'g';
 
         const m=sy.memory||{};
