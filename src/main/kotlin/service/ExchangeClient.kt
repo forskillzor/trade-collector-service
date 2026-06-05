@@ -142,7 +142,6 @@ class ExchangeClient(
     private suspend fun connectAndListen(url: String, symbol: String, client: HttpClient) {
         var reconnectAttempts = 0
         val maxReconnectDelay = 30000L
-        var frameCount = 0
         val silenceTimeoutMs = 60_000L
 
         while (true) {
@@ -153,35 +152,34 @@ class ExchangeClient(
                 client.webSocket(url) {
                     log.info { "${config.name}/$symbol: WebSocket connected" }
                     reconnectAttempts = 0
-                    frameCount = 0
 
-                    // Silence watchdog: if no frames for silenceTimeoutMs, force reconnect
+                    var lastTradeTime = System.currentTimeMillis()
+
+                    // Watchdog: if no trades for silenceTimeoutMs, force reconnect
+                    // Runs in a loop, checks every 10s
                     val watchdog = launch {
-                        delay(silenceTimeoutMs)
-                        if (frameCount == 0) {
-                            log.warn { "${config.name}/$symbol: NO frames after ${silenceTimeoutMs / 1000}s — forcing reconnect" }
-                            cancel("Silence timeout")
+                        while (isActive) {
+                            delay(10_000)
+                            if (System.currentTimeMillis() - lastTradeTime > silenceTimeoutMs) {
+                                log.warn { "${config.name}/$symbol: NO trades for ${silenceTimeoutMs / 1000}s — forcing reconnect" }
+                                cancel("Trade silence timeout")
+                            }
                         }
                     }
 
-                    // Отправляем подписку если требуется
                     adapter.getSubscribeMessage(symbol)?.let { message ->
                         send(message)
                         log.debug { "${config.name}/$symbol: subscribed" }
                     }
 
                     for (frame in incoming) {
-                        watchdog.cancel()
                         when (frame) {
                             is Frame.Text -> {
-                                frameCount++
                                 val text = frame.readText()
-
-                                // Фильтруем служебные сообщения
                                 if (!adapter.isTradeMessage(text)) {
                                     continue
                                 }
-
+                                lastTradeTime = System.currentTimeMillis()
                                 processor.process(text, config.name, symbol)
                             }
                             is Frame.Close -> {
