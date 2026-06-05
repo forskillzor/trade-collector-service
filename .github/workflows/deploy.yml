@@ -11,6 +11,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
@@ -32,24 +34,16 @@ jobs:
           ARCHIVE="trade-collector-${TAG}.tar.gz"
           echo "🔍 Downloading asset: $ARCHIVE"
 
-          ASSET_ID=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
-            | jq -r '.assets[] | select(.name == "'"$ARCHIVE"'") | .id')
-
-          if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
-            echo "❌ Asset not found in release $TAG"
-            echo "Available assets:"
-            curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
-              | jq -r '.assets[].name'
-            exit 1
-          fi
-
           curl -sL \
             -H "Accept: application/octet-stream" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -o "/tmp/$ARCHIVE" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$ASSET_ID"
+            "https://api.github.com/repos/${{ github.repository }}/releases/assets/$( \
+              curl -s \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG" \
+                | jq -r '.assets[] | select(.name == "'"$ARCHIVE"'") | .id' \
+            )"
 
           if [ ! -s "/tmp/$ARCHIVE" ]; then
             echo "❌ Failed to download archive or file is empty"
@@ -60,6 +54,7 @@ jobs:
 
           if ! tar -tzf "/tmp/$ARCHIVE" >/dev/null 2>&1; then
             echo "❌ Downloaded file is NOT a valid .tar.gz!"
+            echo "First bytes: $(head -c 200 "/tmp/$ARCHIVE")"
             exit 1
           fi
 
@@ -77,6 +72,7 @@ jobs:
           echo "🚀 Deploying on VPS..."
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST << 'EOF'
           set -e
+          echo "📦 Starting deployment..."
 
           TAG="${{ github.event.inputs.tag_version }}"
           ARCHIVE="trade-collector-${TAG}.tar.gz"
@@ -95,6 +91,8 @@ jobs:
           export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
 
           echo "🔧 Running deploy-remote.sh..."
+          echo "DB_HOST: $DB_HOST  DB_PORT: $DB_PORT  DB_USER: $DB_USER  DB_NAME: $DB_NAME"
+
           chmod +x deploy-remote.sh
           ./deploy-remote.sh "$TAG"
 
