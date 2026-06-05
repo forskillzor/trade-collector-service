@@ -14,6 +14,7 @@ private val log = KotlinLogging.logger {}
 class TradeDAO(
     private val dataSource: HikariDataSource
 ) {
+    val connection get() = dataSource.connection
     companion object {
         fun createDataSource(config: DatabaseConfig): HikariDataSource {
             val hikariConfig = HikariConfig().apply {
@@ -88,7 +89,7 @@ class TradeDAO(
 
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS ${tableName("filtered_trades", symbol)} (
-                    id                   BIGSERIAL,
+                    id                   BIGSERIAL PRIMARY KEY,
                     exchange             VARCHAR(20)    NOT NULL,
                     symbol               VARCHAR(20)    NOT NULL,
                     timestamp            BIGINT         NOT NULL,
@@ -103,9 +104,8 @@ class TradeDAO(
                     window_end_time      BIGINT         NOT NULL,
                     window_total_trades  INTEGER        NOT NULL,
                     created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    batch_id             UUID,
-                    PRIMARY KEY (id, timestamp)
-                ) PARTITION BY RANGE (timestamp)
+                    batch_id             UUID
+                )
             """)
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_ts ON ${tableName("filtered_trades", symbol)} (timestamp DESC)")
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_vol ON ${tableName("filtered_trades", symbol)} (volume_usd DESC)")

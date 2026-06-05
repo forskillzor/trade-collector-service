@@ -15,6 +15,7 @@ class TradeCollectorService(
     private val isRunning = AtomicBoolean(false)
     private val exchangeClients = mutableListOf<ExchangeClient>()
     private var tradeProcessor: TradeProcessor? = null
+    private var batchScheduler: BatchScheduler? = null
     private var monitoringServer: MonitoringServer? = null
     private var serviceJob: Job? = null
     private var coroutineScope: CoroutineScope? = null
@@ -45,6 +46,12 @@ class TradeCollectorService(
             }
 
             log.info { "Created ${exchangeClients.size} clients" }
+
+            // Запуск BatchScheduler (обработка агрегатов и статистики раз в минуту)
+            val allSymbols = config.exchanges.flatMap { it.symbols }.map { it.uppercase() }.distinct()
+            batchScheduler = BatchScheduler(dao, allSymbols, config.processor)
+            batchScheduler!!.start(coroutineScope!!)
+            log.info { "BatchScheduler started for ${allSymbols.size} symbols" }
 
             // Запуск мониторинга
             if (config.monitoring.enableMetrics) {
@@ -100,6 +107,7 @@ class TradeCollectorService(
         log.info { "Stopping TradeCollectorService..." }
 
         ShutdownChain()
+            .step("BatchScheduler", 30_000) { batchScheduler?.stop() }
             .step("TradeProcessor", 30_000) { tradeProcessor?.shutdown() }
             .step("ExchangeClients", 15_000) {
                 exchangeClients.forEach { client -> client.stop() }
