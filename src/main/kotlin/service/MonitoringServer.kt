@@ -175,6 +175,10 @@ class MonitoringServer(
                             call.respondText(jmapper.writeValueAsString(history), ContentType.Application.Json)
                         }
 
+                        get("/api/metrics/history") {
+                            call.respondText(jmapper.writeValueAsString(MetricsLog.getHistory()), ContentType.Application.Json)
+                        }
+
                         val staticDir = File("static")
                         if (staticDir.exists()) {
                             staticFiles("/", staticDir)

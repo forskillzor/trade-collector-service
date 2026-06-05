@@ -95,8 +95,17 @@ class TradeCollectorService(
     private fun logStatus() {
         val metrics = tradeProcessor?.getMetrics() ?: emptyMap()
         val memory = Runtime.getRuntime()
+        val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        val cpuLoad = osBean?.systemCpuLoad?.let { if (it < 0) null else it }
 
-        log.info { "STATUS | ticks=${metrics["totalTrades"] ?: 0} tps=${metrics["tradesPerSecond"] ?: 0} queue=${metrics["batchQueueSize"] ?: 0} clients=${exchangeClients.size} mem_total=${memory.totalMemory() / 1024 / 1024}MB mem_free=${memory.freeMemory() / 1024 / 1024}MB" }
+        val tps = (metrics["tradesPerSecond"] as? Int) ?: 0
+        val load = osBean?.systemLoadAverage ?: 0.0
+        val heapUsed = (memory.totalMemory() - memory.freeMemory()) / 1024 / 1024
+        val heapMax = memory.maxMemory() / 1024 / 1024
+
+        MetricsLog.snapshot(tps, load, heapUsed, heapMax, cpuLoad)
+
+        log.info { "STATUS | ticks=${metrics["totalTrades"] ?: 0} tps=$tps queue=${metrics["batchQueueSize"] ?: 0} clients=${exchangeClients.size} mem_total=${memory.totalMemory() / 1024 / 1024}MB mem_free=${memory.freeMemory() / 1024 / 1024}MB" }
     }
 
     suspend fun stop() {

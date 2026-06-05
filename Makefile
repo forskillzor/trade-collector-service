@@ -1,4 +1,4 @@
-.PHONY: help dev-up dev-down dev-run dev-restart test build clean db-init db-reset db-psql
+.PHONY: help dev-up dev-down dev-run dev-restart test build clean db-init db-reset db-psql package deploy
 
 DOCKER := $(shell command -v docker 2>/dev/null)
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
@@ -10,6 +10,9 @@ DB_PORT ?= 5432
 DB_NAME ?= trade_collector
 DB_USER ?= trade_user
 DB_PASSWORD ?= dev_password
+VPS_HOST ?= $(VPS_HOST)
+VPS_USER ?= $(VPS_USER)
+VERSION ?= $(shell date +%Y%m%d-%H%M%S)
 
 # ===== ЛОКАЛЬНАЯ РАЗРАБОТКА =====
 
@@ -35,6 +38,25 @@ build:           ## Собрать shadowJar
 
 clean:           ## Очистить сборку
 	./gradlew clean --no-daemon
+
+package: build   ## Собрать и упаковать архив для деплоя
+	chmod +x scripts/prepare-package.sh
+	./scripts/prepare-package.sh $(VERSION)
+	@ls -lh trade-collector-*.tar.gz
+
+# ===== ДЕПЛОЙ =====
+
+deploy: package  ## Собрать и задеплоить на VPS (нужны VPS_HOST, VPS_USER, VPS_SSH_KEY)
+	@test -n "$(VPS_HOST)" || (echo "❌ VPS_HOST not set" && exit 1)
+	@test -n "$(VPS_USER)" || (echo "❌ VPS_USER not set" && exit 1)
+	scp -i $(VPS_SSH_KEY) -o StrictHostKeyChecking=no trade-collector-$(VERSION).tar.gz $(VPS_USER)@$(VPS_HOST):/tmp/
+	ssh -i $(VPS_SSH_KEY) -o StrictHostKeyChecking=no $(VPS_USER)@$(VPS_HOST) "
+		sudo systemctl stop trade-collector 2>/dev/null || true
+		rm -rf /opt/trade-collector/releases/*
+		cp /tmp/trade-collector-$(VERSION).tar.gz /tmp/
+		export DB_PASSWORD=$(DB_PASSWORD) DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_NAME=$(DB_NAME)
+		cd /opt/trade-collector && bash deploy-remote.sh $(VERSION)
+	"
 
 # ===== БАЗА ДАННЫХ (локально) =====
 

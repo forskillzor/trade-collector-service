@@ -22,33 +22,32 @@ body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
 .card h2 { font-size: 11px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; letter-spacing: 1px; }
 .card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 6px; text-transform: none; }
-.wide-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 10px 10px; }
-@media (max-width: 760px) { .wide-row { grid-template-columns: 1fr; } }
 .row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--border); }
 .row:last-child { border-bottom: none; }
 .lbl { color: var(--dim); }
 .val { font-weight: bold; }
-.val.big { font-size: 16px; color: var(--blue); }
-.val.g { color: var(--green); } .val.y { color: var(--yellow); } .val.r { color: var(--red); }
+.val.g { color: var(--green); } .val.r { color: var(--red); } .val.y { color: var(--yellow); }
 .bar { height: 5px; background: var(--border); border-radius: 3px; margin-top: 6px; }
 .bar-f { height: 100%; border-radius: 3px; transition: width 1s; }
 .bar-f.g { background: var(--green); } .bar-f.y { background: var(--yellow); } .bar-f.r { background: var(--red); } .bar-f.b { background: var(--blue); }
 .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .mbox { text-align: center; } .mbox .num { font-size: 20px; color: var(--blue); } .mbox .lbl { font-size: 9px; color: var(--dim); }
-table { width: 100%; border-collapse: collapse; }
-td { padding: 2px 5px; font-size: 10px; }
-td:last-child { text-align: right; }
 .hist-scroll { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
 .hist-inner { display: flex; gap: 2px; }
 .hist-bar { width: 8px; height: 14px; border-radius: 2px; flex-shrink: 0; }
 .hist-bar.g { background: var(--green); } .hist-bar.r { background: var(--red); } .hist-bar.x { background: var(--gray); }
 .sym-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 10px; }
 .sym-name { width: 85px; font-weight: bold; flex-shrink: 0; }
-.sym-trades { width: 50px; text-align: right; color: var(--blue); flex-shrink: 0; }
+.sym-trades { width: 55px; text-align: right; color: var(--blue); flex-shrink: 0; }
 .sym-hist { flex: 1; min-width: 0; }
-.logs { max-height: 420px; overflow-y: auto; font-size: 10px; line-height: 1.3; word-break: break-all; }
+.chart-wrap { position: relative; margin-top: 10px; }
+.chart-wrap canvas { display: block; }
+.logs { max-height: 400px; overflow-y: auto; font-size: 10px; line-height: 1.3; word-break: break-all; }
 .logs .log-line { padding: 1px 0; }
 .footer { text-align: center; padding: 8px; color: var(--dim); font-size: 10px; }
+.wide-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 10px 10px; }
+@media (max-width: 760px) { .wide-row { grid-template-columns: 1fr; } }
+.full-row { padding: 0 10px 10px; }
 </style>
 </head>
 <body>
@@ -62,7 +61,6 @@ td:last-child { text-align: right; }
   </div>
 
   <div class="grid">
-    <!-- Health -->
     <div class="card">
       <h2>Health</h2>
       <div class="row"><span class="lbl">Status</span><span :class="'val '+(s.healthColor=='green'?'g':s.healthColor=='yellow'?'y':'r')">{{ s.healthText }}</span></div>
@@ -70,8 +68,6 @@ td:last-child { text-align: right; }
       <div class="row"><span class="lbl">WebSockets</span><span class="val">{{ s.wsConnected }}/{{ s.wsTotal }}</span></div>
       <div class="row"><span class="lbl">Symbols active</span><span class="val">{{ activeCount }}</span></div>
     </div>
-
-    <!-- Trades -->
     <div class="card">
       <h2>Trades <span class="badge">{{ s.tps }}/s</span></h2>
       <div class="mgrid">
@@ -81,8 +77,6 @@ td:last-child { text-align: right; }
         <div class="mbox"><div class="num">{{ activeCount }}</div><div class="lbl">Active sym</div></div>
       </div>
     </div>
-
-    <!-- System -->
     <div class="card">
       <h2>System <span class="badge">{{ s.cores }} core</span></h2>
       <div class="row"><span class="lbl">Load</span><span class="val">{{ s.loadStr }}</span></div>
@@ -93,8 +87,6 @@ td:last-child { text-align: right; }
       <div class="row"><span class="lbl">Disk</span><span class="val">{{ s.diskFree }} / {{ s.diskTotal }} MB</span></div>
       <div class="bar"><div class="bar-f" :class="s.diskColor" :style="{width: s.diskPct + '%'}"></div></div>
     </div>
-
-    <!-- Database -->
     <div class="card">
       <h2>Database <span class="badge">{{ s.dbSizeMB }} MB</span></h2>
       <div style="max-height:200px;overflow-y:auto">
@@ -106,27 +98,22 @@ td:last-child { text-align: right; }
     </div>
   </div>
 
-  <!-- Instruments + Logs (50/50 desktop, stacked mobile) -->
+  <!-- Instruments + Logs 50/50 -->
   <div class="wide-row">
     <div class="card">
-      <h2>Instruments <span class="badge">{{ symbols.length }} total · green=agg red=raw gray=none</span></h2>
+      <h2>Instruments <span class="badge">{{ symbols.length }} total</span></h2>
       <div style="max-height:420px;overflow-y:auto" ref="instScroll">
         <div class="sym-row" v-for="sym in symbols" :key="sym.name">
           <span class="sym-name">{{ sym.name }}</span>
           <span class="sym-trades">{{ fmt(sym.trades) }}</span>
-          <div class="sym-hist">
-            <div class="hist-scroll" :ref="el => histRefs[sym.name] = el">
-              <div class="hist-inner">
-                <span v-for="(h,i) in sym.history" :key="i"
-                  :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
-                  :title="fmtMin(h.minute)+': '+(h.hasAgg?'agg':h.hasRaw?'raw':'none')"></span>
-              </div>
-            </div>
-          </div>
+          <div class="sym-hist"><div class="hist-scroll" :ref="el => setHistRef(sym.name, el)"><div class="hist-inner">
+            <span v-for="(h,i) in sym.history" :key="i"
+              :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
+              :title="fmtMin(h.minute)"></span>
+          </div></div></div>
         </div>
       </div>
     </div>
-
     <div class="card">
       <h2>Logs <span class="badge">{{ s.logs.length }} lines</span></h2>
       <div class="logs" ref="logsEl">
@@ -135,15 +122,25 @@ td:last-child { text-align: right; }
     </div>
   </div>
 
+  <!-- Metrics History Chart -->
+  <div class="card full-row" style="margin:0 10px 10px">
+    <h2>Metrics History <span class="badge">{{ mhist.length }} points · scroll →</span></h2>
+    <div class="chart-wrap" style="overflow-x:auto">
+      <canvas ref="chartCanvas" :width="chartW" height="160" style="width:100%;max-width:100%"></canvas>
+    </div>
+  </div>
+
+  <div class="footer">auto-refresh 5s · {{ s.now }}</div>
+</div>
+
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script>
-const { createApp, ref, nextTick, watch, reactive } = Vue;
+const { createApp, ref, nextTick, watch, reactive, onMounted, onUpdated } = Vue;
 
 createApp({
   setup() {
     const logsEl = ref(null);
-    const instScroll = ref(null);
-    const histRefs = reactive({});
+    const chartCanvas = ref(null);
     const s = reactive({
       healthText:'loading',healthColor:'yellow',dbHealthy:false,wsConnected:0,wsTotal:0,version:'',uptime:'',
       total:0,tps:0,queue:0,cores:0,loadStr:'0',loadPct:0,loadColor:'g',
@@ -154,40 +151,74 @@ createApp({
     const symMap = reactive({});
     const symbols = ref([]);
     const activeCount = ref(0);
-    let histPending = 0;
+    const mhist = ref([]);
+    const chartW = ref(3000);
+    const histRefs = {};
     let scrollTimeout = null;
     let userScrolled = false;
 
+    function setHistRef(name, el) { if (el) histRefs[name] = el; }
     function fmt(n) { return !n&&n!==0?'—':Number(n).toLocaleString(); }
     function fmtMin(ts) { if(!ts) return ''; const d=new Date(ts); return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0'); }
 
-    function autoScrollHistograms() {
-      if (userScrolled) return;
-      Object.values(histRefs).forEach(el => {
-        if (el) el.scrollLeft = el.scrollWidth;
+    function drawChart() {
+      const canvas = chartCanvas.value;
+      if (!canvas || !mhist.value.length) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      const data = mhist.value;
+      if (data.length < 2) return;
+
+      ctx.clearRect(0, 0, W, H);
+      // grid
+      ctx.strokeStyle = '#1e2733'; ctx.lineWidth = 0.5;
+      for (let y = 0; y < H; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+      const pts = data.length;
+      const xStep = W / (pts - 1);
+      const tpsMax = Math.max(200, ...data.map(d=>d.tps||0));
+      const heapMaxPx = H * 0.3;
+      const colors = { tps: '#65baf0', load: '#ffd173', heap: '#73d0a1', cpu: '#f07178' };
+
+      function line(vals, max, yOff, color) {
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+        for (let i = 0; i < vals.length; i++) {
+          const x = i * xStep;
+          const y = H - (vals[i] / max * (H * 0.33)) - yOff;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      line(data.map(d=>d.tps||0), tpsMax, 0, colors.tps);
+      line(data.map(d=>(d.load||0)*100), 200, H*0.33, colors.load);
+      line(data.map(d=>(d.heapUsed||0)/(d.heapMax||1)*100), 100, H*0.66, colors.heap);
+      line(data.map(d=>(d.cpuLoad||0)*100), 100, H*0.66, colors.cpu);
+
+      // legend
+      ctx.font = '10px monospace';
+      [{t:'TPS',c:colors.tps},{t:'Load',c:colors.load},{t:'Heap%',c:colors.heap},{t:'CPU',c:colors.cpu}].forEach((l,i)=>{
+        ctx.fillStyle = l.c; ctx.fillText(l.t, 5 + i*65, 12);
       });
     }
 
-    function onHistScroll() {
-      userScrolled = true;
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        userScrolled = false;
-        autoScrollHistograms();
-      }, 5000);
+    function autoScrollHistograms() {
+      if (userScrolled) return;
+      Object.values(histRefs).forEach(el => { if(el) el.scrollLeft = el.scrollWidth; });
     }
+    function onHistScroll() { userScrolled = true; clearTimeout(scrollTimeout); scrollTimeout = setTimeout(()=>{userScrolled=false;autoScrollHistograms()}, 5000); }
 
     async function fetchData() {
       try {
-        const [health,status,ex,ilogs,inst] = await Promise.all([
+        const [health,status,ex,ilogs,inst,mh] = await Promise.all([
           fetch('/health').then(r=>r.json()),
           fetch('/status').then(r=>r.json()),
           fetch('/exchanges').then(r=>r.json()),
           fetch('/api/logs').then(r=>r.json()),
-          fetch('/api/instruments').then(r=>r.json())
+          fetch('/api/instruments').then(r=>r.json()),
+          fetch('/api/metrics/history').then(r=>r.json())
         ]);
         const h=health||{}, st=status||{};
-
         s.healthText=h.status||'unknown';
         s.healthColor=h.status==='healthy'?'green':h.status==='degraded'?'yellow':'red';
         s.dbHealthy=h.checks?.database==='ok';
@@ -200,108 +231,73 @@ createApp({
         s.queue=st.metrics?.batchQueueSize??0;
 
         const sy=st.system||{};
-        const cores = Math.max(Number(sy.availableProcessors) || 1, 1);
-        s.cores = cores;
-        const cl = sy.cpuLoad;
-        if (cl != null && cl >= 0) {
-            s.loadStr = (cl * 100).toFixed(1) + '%';
-            s.loadPct = Math.round(cl * 100);
-        } else {
-            s.loadStr = '—';
-            s.loadPct = 0;
-        }
-        s.loadColor = s.loadPct > 80 ? 'r' : s.loadPct > 50 ? 'y' : 'g';
-
+        s.cores=Math.max(Number(sy.availableProcessors)||1,1);
+        const cl=sy.cpuLoad;
+        s.loadStr=cl!=null&&cl>=0?(cl*100).toFixed(1)+'%':'—';
+        s.loadPct=cl!=null?Math.round(cl*100):0;
+        s.loadColor=s.loadPct>80?'r':s.loadPct>50?'y':'g';
         const m=sy.memory||{};
-        s.heapUsed = m.heapUsedMB ?? 0;
-        s.heapMax = m.heapMaxMB ?? 1;
-        s.nonHeap = m.nonHeapUsedMB ?? 0;
-        s.heapPct = Math.min(100, (s.heapUsed / s.heapMax * 100) || 0);
-        s.heapColor = s.heapPct > 80 ? 'r' : s.heapPct > 60 ? 'y' : 'g';
-
+        s.heapUsed=m.heapUsedMB??0; s.heapMax=m.heapMaxMB??1; s.nonHeap=m.nonHeapUsedMB??0;
+        s.heapPct=Math.min(100,(s.heapUsed/s.heapMax*100)||0);
+        s.heapColor=s.heapPct>80?'r':s.heapPct>60?'y':'g';
         const dk=sy.disk||{};
-        s.diskTotal = dk.totalMB ?? 0;
-        s.diskFree = dk.freeMB ?? 0;
-        s.diskPct = dk.usedPercent ?? 0;
-        s.diskColor = s.diskPct > 80 ? 'r' : s.diskPct > 60 ? 'y' : 'g';
+        s.diskTotal=dk.totalMB??0; s.diskFree=dk.freeMB??0; s.diskPct=dk.usedPercent??0;
+        s.diskColor=s.diskPct>80?'r':s.diskPct>60?'y':'g';
 
-        // per-symbol DB stats from status.database.tableCounts
-        const db = st.database || {};
-        s.dbPerSym = {};
-        const tc = db.tableCounts || {};
-        Object.entries(tc).forEach(([k,v]) => {
-          const name = k.replace(/^(raw_trades|aggregates|filtered_trades|volume_windows)_/, '');
-          if (!s.dbPerSym[name]) s.dbPerSym[name] = 0;
-          s.dbPerSym[name] += (v || 0);
-        });
-        s.dbSizeMB = db.dbSizeMB ?? '—';
+        const db=st.database||{}; s.dbPerSym={}; s.dbSizeMB=db.dbSizeMB??'—';
+        const tc=db.tableCounts||{};
+        Object.entries(tc).forEach(([k,v])=>{const nm=k.replace(/^(raw_trades|aggregates|filtered_trades|volume_windows)_/,'');if(!s.dbPerSym[nm])s.dbPerSym[nm]=0;s.dbPerSym[nm]+=(v||0)});
+        s.logs=Array.isArray(ilogs)?ilogs:[];
+        mhist.value=Array.isArray(mh)?mh:[];
+        chartW.value=Math.max(3000, mhist.value.length * 3);
 
-        s.logs = Array.isArray(ilogs) ? ilogs : [];
-
-        // instruments: smooth in-place update
-        const instruments = Array.isArray(inst) ? inst : [];
-        const xs = Array.isArray(ex) ? ex : [];
-        const allSym = xs.flatMap(x => x.symbols.map(sym => sym.toUpperCase())).sort();
-        let act = 0;
-        const nowList = new Set();
-
-        allSym.forEach(symName => {
-          const found = instruments.find(i => i.symbol === symName);
-          if (!symMap[symName]) {
-            symMap[symName] = reactive({ name: symName, trades: 0, history: [] });
-          }
-          symMap[symName].trades = found?.totalTrades ?? 0;
-          if ((found?.totalTrades ?? 0) > 0) act++;
+        const instruments=Array.isArray(inst)?inst:[];
+        const xs=Array.isArray(ex)?ex:[];
+        const allSym=xs.flatMap(x=>x.symbols.map(sym=>sym.toUpperCase())).sort();
+        let act=0; const nowList=new Set();
+        allSym.forEach(symName=>{
+          const found=instruments.find(i=>i.symbol===symName);
+          if(!symMap[symName]) symMap[symName]=reactive({name:symName,trades:0,history:[]});
+          symMap[symName].trades=found?.totalTrades??0;
+          if((found?.totalTrades??0)>0)act++;
           nowList.add(symName);
         });
-        activeCount.value = act;
-        Object.keys(symMap).forEach(k => { if (!nowList.has(k)) delete symMap[k]; });
-        symbols.value = Object.values(symMap);
+        activeCount.value=act;
+        Object.keys(symMap).forEach(k=>{if(!nowList.has(k))delete symMap[k]});
+        symbols.value=Object.values(symMap);
 
         // fetch history
-        if (histPending <= 0) {
-          histPending = allSym.length;
-          allSym.forEach(symName => {
-            fetch('/api/history/' + symName + '?minutes=60').then(r => r.json()).then(hist => {
-              if (Array.isArray(hist) && symMap[symName]) {
-                symMap[symName].history = hist;
-                nextTick(() => autoScrollHistograms());
-              }
-            }).catch(() => {}).finally(() => { histPending--; });
-          });
-        }
+        allSym.forEach(symName=>{
+          fetch('/api/history/'+symName+'?minutes=60').then(r=>r.json()).then(hist=>{
+            if(Array.isArray(hist) && symMap[symName]){symMap[symName].history=hist;nextTick(()=>autoScrollHistograms())}
+          }).catch(()=>{});
+        });
 
-        s.now = new Date().toLocaleTimeString();
-      } catch(e) { console.warn('fetch err', e); }
+        s.now=new Date().toLocaleTimeString();
+        nextTick(drawChart);
+      } catch(e) { console.warn('fetch err',e); }
     }
 
     function fmUp(ms) {
-      if (!ms) return '—';
-      const ss = Math.floor(ms / 1000), mm = Math.floor(ss / 60), hh = Math.floor(mm / 60);
-      if (hh > 0) return hh + 'h ' + (mm % 60) + 'm';
-      if (mm > 0) return mm + 'm ' + (ss % 60) + 's';
-      return ss + 's';
-    }
-
-    // attach scroll listeners to hist refs
-    function attachScrollListeners() {
-      Object.values(histRefs).forEach(el => {
-        if (el && !el._listenerAttached) {
-          el.addEventListener('scroll', onHistScroll);
-          el._listenerAttached = true;
-        }
-      });
+      if(!ms) return '—';
+      const ss=Math.floor(ms/1000),mm=Math.floor(ss/60),hh=Math.floor(mm/60);
+      if(hh>0) return hh+'h '+(mm%60)+'m';
+      if(mm>0) return mm+'m '+(ss%60)+'s';
+      return ss+'s';
     }
 
     fetchData();
-    setInterval(fetchData, 5000);
-    setInterval(attachScrollListeners, 1000);
+    const t1 = setInterval(fetchData, 5000);
+    const t2 = setInterval(()=>{
+      document.querySelectorAll('.hist-scroll').forEach(el=>{
+        if(!el._listener){el.addEventListener('scroll',onHistScroll);el._listener=true;}
+        if(!userScrolled) el.scrollLeft = el.scrollWidth;
+      });
+    }, 1000);
 
-    watch(() => s.logs.length, () => {
-      nextTick(() => { const el = logsEl.value; if (el) el.scrollTop = el.scrollHeight; });
-    });
+    watch(()=>s.logs.length,()=>{nextTick(()=>{const el=logsEl.value;if(el)el.scrollTop=el.scrollHeight})});
 
-    return { s, symbols, activeCount, histRefs, fmt, fmtMin, logsEl, instScroll };
+    return { s, symbols, activeCount, mhist, chartW, fmt, fmtMin, logsEl, chartCanvas, setHistRef };
   }
 }).mount('#app');
 </script>
