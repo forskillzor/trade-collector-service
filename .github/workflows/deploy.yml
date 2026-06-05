@@ -89,10 +89,10 @@ jobs:
           tar -xzf "/tmp/$ARCHIVE"
 
           export DB_PASSWORD='${{ secrets.DB_PASSWORD }}'
-          export DB_HOST='${{ secrets.DB_HOST || ''localhost'' }}'
-          export DB_PORT='${{ secrets.DB_PORT || ''5432'' }}'
-          export DB_USER='${{ secrets.DB_USER || ''trade_user'' }}'
-          export DB_NAME='${{ secrets.DB_NAME || ''trade_collector'' }}'
+          export DB_HOST='${{ secrets.DB_HOST || 'localhost' }}'
+          export DB_PORT='${{ secrets.DB_PORT || '5432' }}'
+          export DB_USER='${{ secrets.DB_USER || 'trade_user' }}'
+          export DB_NAME='${{ secrets.DB_NAME || 'trade_collector' }}'
 
           echo "🔧 Running deploy-remote.sh..."
           chmod +x deploy-remote.sh
