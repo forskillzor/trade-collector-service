@@ -19,8 +19,8 @@
   "processor": {
     "batchSize": 5000,
     "flushIntervalMs": 500,
-    "windowSize": 1000000,
-    "slideStep": 100000,
+    "windowSize": 10000,
+    "slideStep": 1000,
     "filterPercentile": 0.98,
     "timeframes": ["1m", "15m"]
   },
@@ -32,7 +32,7 @@
   },
   "monitoring": {
     "httpPort": 8080,
-    "host": "localhost",
+    "host": "0.0.0.0",
     "enableMetrics": true,
     "metricsPath": "/metrics",
     "healthPath": "/health",
