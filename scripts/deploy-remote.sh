@@ -129,6 +129,10 @@ for i in $(seq 1 $HEALTH_RETRIES); do
 
     if [ "$i" -eq "$HEALTH_RETRIES" ]; then
         echo "❌ Health check провален после $HEALTH_RETRIES попыток"
+        echo "📋 Последние 20 строк journal:"
+        sudo journalctl -u trade-collector.service --no-pager -n 20 2>/dev/null || true
+        echo "📋 Статус сервиса:"
+        sudo systemctl status trade-collector.service --no-pager -l 2>/dev/null || true
 
         if [ -n "$PREV_VERSION" ] && [ -d "$APP_DIR/releases/$PREV_VERSION" ]; then
             echo "🔙 Откатываю на $PREV_VERSION..."
