@@ -1,25 +1,21 @@
-name: Release & Deploy
+name: Build & Release
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (e.g. v0.0.4)'
-        required: true
-        type: string
-        default: 'v0.0.4'
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -27,12 +23,15 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Cache Gradle
+      - name: Cache Gradle dependencies
         uses: actions/cache@v3
         with:
-          path: ~/.gradle/caches
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: ${{ runner.os }}-gradle-
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Run tests
         run: |
@@ -40,70 +39,25 @@ jobs:
           ./gradlew test --no-daemon
 
       - name: Build shadowJar
-        run: ./gradlew shadowJar --no-daemon
+        run: |
+          chmod +x gradlew
+          ./gradlew shadowJar --no-daemon
 
       - name: Prepare package
         run: |
           chmod +x scripts/prepare-package.sh
-          ./scripts/prepare-package.sh "${{ inputs.tag || github.ref_name }}"
+          ./scripts/prepare-package.sh "${{ github.ref_name }}"
 
-      - name: Set tag output
-        id: tag
-        run: echo "tag=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload artifact for deploy
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: deploy-package
+          name: trade-collector-package
           path: trade-collector-*.tar.gz
-          retention-days: 1
+          retention-days: 10
 
       - name: Create GitHub Release
-        if: github.event_name != 'workflow_dispatch'
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v1
         with:
           files: trade-collector-*.tar.gz
           generate_release_notes: true
-
-  deploy:
-    needs: build-and-release
-    runs-on: ubuntu-latest
-    env:
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-    steps:
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/vps_key
-          chmod 600 ~/.ssh/vps_key
-          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: deploy-package
-
-      - name: Deploy
-        run: |
-          TAG="${{ needs.build-and-release.outputs.tag }}"
-          ARCHIVE=$(ls trade-collector-*.tar.gz)
-
-          echo "📤 Copying $ARCHIVE to VPS..."
-          scp -i ~/.ssh/vps_key -o StrictHostKeyChecking=no "$ARCHIVE" \
-            $VPS_USER@$VPS_HOST:/tmp/
-
-          echo "🚀 Running deploy-remote.sh..."
-          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST "
-            sudo mkdir -p /opt/trade-collector && sudo chown -R \$USER:\$USER /opt/trade-collector || { echo '❌ Cannot init /opt/trade-collector — add deploy to sudoers'; exit 1; }
-            cd /opt/trade-collector || exit 1
-            ARCHIVE=\$(ls /tmp/trade-collector-*.tar.gz)
-            tar -xzf \$ARCHIVE deploy-remote.sh
-            bash deploy-remote.sh $TAG
-          "
-
-      - name: Verify
-        run: |
-          ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=no $VPS_USER@$VPS_HOST \
-            "curl -sf --retry 3 --retry-delay 5 http://localhost:8080/health && echo 'Health OK'"
