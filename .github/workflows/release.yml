@@ -51,7 +51,7 @@ jobs:
       - name: Prepare package
         run: |
           chmod +x scripts/prepare-package.sh
-          ./scripts/prepare-package.sh "${{ github.ref_name }}"
+          ./scripts/prepare-package.sh "${{ inputs.tag_version || github.ref_name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -61,8 +61,9 @@ jobs:
           retention-days: 10
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
           files: trade-collector-*.tar.gz
           generate_release_notes: true
+          tag_name: ${{ inputs.tag_version || github.ref_name }}
