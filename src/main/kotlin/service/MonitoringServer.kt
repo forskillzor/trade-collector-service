@@ -171,8 +171,38 @@ class MonitoringServer(
                                 call.respondText(jmapper.writeValueAsString(mapOf("error" to "symbol required")), ContentType.Application.Json)
                                 return@get
                             }
+                            val cacheKey = "history_${symbol}_$minutes"
+                            val cached = HistoryCache.get(cacheKey)
+                            if (cached != null) {
+                                call.respondText(jmapper.writeValueAsString(cached), ContentType.Application.Json)
+                                return@get
+                            }
                             val history = tradeDAO.getHistory(symbol, minutes)
+                            HistoryCache.put(cacheKey, history)
                             call.respondText(jmapper.writeValueAsString(history), ContentType.Application.Json)
+                        }
+
+                        get("/api/history/all") {
+                            val minutes = call.request.queryParameters["minutes"]?.toIntOrNull() ?: 60
+                            val cacheKey = "history_all_$minutes"
+                            val cached = HistoryCache.get(cacheKey)
+                            if (cached != null) {
+                                call.respondText(jmapper.writeValueAsString(cached), ContentType.Application.Json)
+                                return@get
+                            }
+                            val config = ConfigManager.getConfig()
+                            val allSymbols = config.exchanges.flatMap { x -> x.symbols }
+                            val result = mutableMapOf<String, List<Map<String, Any?>>>()
+                            allSymbols.forEach { symbol ->
+                                val sym = symbol.uppercase()
+                                try {
+                                    result[sym] = tradeDAO.getHistory(sym, minutes)
+                                } catch (e: Exception) {
+                                    result[sym] = emptyList()
+                                }
+                            }
+                            HistoryCache.put(cacheKey, result)
+                            call.respondText(jmapper.writeValueAsString(result), ContentType.Application.Json)
                         }
 
                         get("/api/metrics/history") {

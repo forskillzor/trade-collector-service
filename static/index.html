@@ -266,12 +266,15 @@ createApp({
         Object.keys(symMap).forEach(k=>{if(!nowList.has(k))delete symMap[k]});
         symbols.value=Object.values(symMap);
 
-        // fetch history
-        allSym.forEach(symName=>{
-          fetch('/api/history/'+symName+'?minutes=60').then(r=>r.json()).then(hist=>{
-            if(Array.isArray(hist) && symMap[symName]){symMap[symName].history=hist;nextTick(()=>autoScrollHistograms())}
-          }).catch(()=>{});
-        });
+        // fetch history for all symbols at once
+        fetch('/api/history/all?minutes=60').then(r=>r.json()).then(allHist=>{
+          if (typeof allHist === 'object' && allHist !== null) {
+            Object.entries(allHist).forEach(([symName, hist]) => {
+              if (Array.isArray(hist) && symMap[symName]) { symMap[symName].history = hist; }
+            });
+            nextTick(()=>autoScrollHistograms());
+          }
+        }).catch(()=>{});
 
         s.now=new Date().toLocaleTimeString();
         nextTick(drawChart);

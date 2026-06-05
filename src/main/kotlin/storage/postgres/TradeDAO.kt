@@ -5,7 +5,6 @@ import com.aandios.model.*
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import mu.KotlinLogging
-import java.math.BigDecimal
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -139,25 +138,6 @@ class TradeDAO(
 
     // ========== RAW TRADES ==========
 
-    fun insertRawTrade(trade: Trade) {
-        ensureTables(trade.symbol)
-        dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                INSERT INTO ${tableName("raw_trades", trade.symbol)} 
-                (exchange, symbol, timestamp, price, quantity, is_buy)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """).use { stmt ->
-                stmt.setString(1, trade.exchange)
-                stmt.setString(2, trade.symbol)
-                stmt.setLong(3, trade.timestamp)
-                stmt.setBigDecimal(4, trade.price)
-                stmt.setBigDecimal(5, trade.quantity)
-                stmt.setBoolean(6, trade.isBuy)
-                stmt.execute()
-            }
-        }
-    }
-
     fun insertRawTradesBatch(trades: List<Trade>) {
         if (trades.isEmpty()) return
         val symbol = trades.first().symbol
@@ -219,22 +199,6 @@ class TradeDAO(
         }
     }
 
-    fun getRawTradesCount(exchange: String, symbol: String): Long {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                SELECT COUNT(*) as count 
-                FROM ${tableName("raw_trades", symbol)} 
-                WHERE exchange = ? AND symbol = ?
-            """).use { stmt ->
-                stmt.setString(1, exchange)
-                stmt.setString(2, symbol)
-                val rs = stmt.executeQuery()
-                if (rs.next()) rs.getLong("count") else 0L
-            }
-        }
-    }
-
     fun cleanupOldRawTrades(symbol: String, maxRows: Long = 10_000): Int {
         ensureTables(symbol)
         return dataSource.connection.use { conn ->
@@ -259,37 +223,6 @@ class TradeDAO(
     }
 
     // ========== FILTERED TRADES ==========
-
-    fun insertFilteredTrade(filteredTrade: FilteredTrade) {
-        val symbol = filteredTrade.trade.symbol
-        ensureTables(symbol)
-        dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                INSERT INTO ${tableName("filtered_trades", symbol)} 
-                (exchange, symbol, timestamp, price, quantity, is_buy,
-                 volume_usd, percentile_threshold, volume_threshold, trade_category,
-                 window_start_time, window_end_time, window_total_trades, batch_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """).use { stmt ->
-                val trade = filteredTrade.trade
-                stmt.setString(1, trade.exchange)
-                stmt.setString(2, trade.symbol)
-                stmt.setLong(3, trade.timestamp)
-                stmt.setBigDecimal(4, trade.price)
-                stmt.setBigDecimal(5, trade.quantity)
-                stmt.setBoolean(6, trade.isBuy)
-                stmt.setBigDecimal(7, filteredTrade.volumeUsd)
-                stmt.setDouble(8, filteredTrade.percentileThreshold)
-                stmt.setBigDecimal(9, filteredTrade.volumeThreshold)
-                stmt.setString(10, filteredTrade.tradeCategory?.name)
-                stmt.setLong(11, filteredTrade.windowStartTime)
-                stmt.setLong(12, filteredTrade.windowEndTime)
-                stmt.setInt(13, filteredTrade.windowTotalTrades)
-                stmt.setObject(14, UUID.randomUUID())
-                stmt.execute()
-            }
-        }
-    }
 
     fun insertFilteredTradesBatch(filteredTrades: List<FilteredTrade>) {
         if (filteredTrades.isEmpty()) return
@@ -364,42 +297,6 @@ class TradeDAO(
         }
     }
 
-    fun getAggregate(
-        exchange: String,
-        symbol: String,
-        timeframe: String,
-        startTime: Long,
-        endTime: Long
-    ): AggregateCandle? {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                SELECT price_levels_jsonb, total_ticks, min_price, max_price, price_levels
-                FROM ${tableName("aggregates", symbol)}
-                WHERE exchange = ? AND symbol = ? AND timeframe = ? 
-                  AND start_time = ? AND end_time = ?
-            """).use { stmt ->
-                stmt.setString(1, exchange)
-                stmt.setString(2, symbol)
-                stmt.setString(3, timeframe)
-                stmt.setLong(4, startTime)
-                stmt.setLong(5, endTime)
-                val rs = stmt.executeQuery()
-                if (rs.next()) {
-                    AggregateCandle(
-                        exchange = exchange, symbol = symbol, timeframe = timeframe,
-                        startTime = startTime, endTime = endTime,
-                        priceLevelsJson = rs.getString("price_levels_jsonb"),
-                        totalTicks = rs.getLong("total_ticks"),
-                        minPrice = rs.getBigDecimal("min_price"),
-                        maxPrice = rs.getBigDecimal("max_price"),
-                        priceLevels = rs.getInt("price_levels")
-                    )
-                } else null
-            }
-        }
-    }
-
     // ========== VOLUME WINDOWS ==========
 
     fun saveVolumeWindow(window: VolumeWindow) {
@@ -444,41 +341,6 @@ class TradeDAO(
                 stmt.setDouble(15, window.filterPercentile)
                 stmt.setBigDecimal(16, window.filterThreshold)
                 stmt.execute()
-            }
-        }
-    }
-
-    fun getLatestVolumeWindow(exchange: String, symbol: String): VolumeWindow? {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                SELECT * FROM ${tableName("volume_windows", symbol)}
-                WHERE exchange = ? AND symbol = ?
-                ORDER BY end_time DESC LIMIT 1
-            """).use { stmt ->
-                stmt.setString(1, exchange)
-                stmt.setString(2, symbol)
-                val rs = stmt.executeQuery()
-                if (rs.next()) {
-                    VolumeWindow(
-                        exchange = rs.getString("exchange"),
-                        symbol = rs.getString("symbol"),
-                        startTime = rs.getLong("start_time"),
-                        endTime = rs.getLong("end_time"),
-                        totalTrades = rs.getInt("total_trades"),
-                        minVolume = rs.getBigDecimal("min_volume"),
-                        maxVolume = rs.getBigDecimal("max_volume"),
-                        avgVolume = rs.getBigDecimal("avg_volume"),
-                        medianVolume = rs.getBigDecimal("median_volume"),
-                        stddevVolume = rs.getBigDecimal("stddev_volume"),
-                        p50Volume = rs.getBigDecimal("p50_volume"),
-                        p95Volume = rs.getBigDecimal("p95_volume"),
-                        p98Volume = rs.getBigDecimal("p98_volume"),
-                        p99Volume = rs.getBigDecimal("p99_volume"),
-                        filterPercentile = rs.getDouble("filter_percentile"),
-                        filterThreshold = rs.getBigDecimal("filter_threshold")
-                    )
-                } else null
             }
         }
     }
@@ -528,8 +390,8 @@ class TradeDAO(
             conn.prepareStatement("""
                 WITH minutes AS (
                     SELECT generate_series(
-                        (SELECT COALESCE(MIN(start_time), ?) FROM ${tableName("aggregates", symbol)}),
-                        (SELECT COALESCE(MAX(start_time), ?) FROM ${tableName("aggregates", symbol)}),
+                        ?,
+                        COALESCE((SELECT MAX(start_time) FROM ${tableName("aggregates", symbol)}), ?),
                         60000
                     ) AS minute_start
                 ),
