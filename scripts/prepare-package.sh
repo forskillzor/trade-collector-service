@@ -66,6 +66,12 @@ if [ -d "static" ]; then
     echo "✅ Dashboard static files copied"
 fi
 
+# setup-vps.sh (bootstrap для голого VPS)
+if [ -f "scripts/setup-vps.sh" ]; then
+    cp "scripts/setup-vps.sh" deploy-package/
+    echo "✅ setup-vps.sh copied (VPS bootstrap)"
+fi
+
 # reset-database.sh (только для ручного сброса БД на VPS, не запускается автоматически)
 if [ -f "scripts/reset-database.sh" ]; then
     cp "scripts/reset-database.sh" deploy-package/
