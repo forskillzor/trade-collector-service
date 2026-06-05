@@ -19,8 +19,6 @@ body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
 .dot.g { background: var(--green); } .dot.r { background: var(--red); } .dot.y { background: var(--yellow); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 10px; padding: 10px; }
-.grid .wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-@media (max-width: 850px) { .grid .wide { grid-template-columns: 1fr; } }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
 .card h2 { font-size: 11px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; letter-spacing: 1px; }
 .card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 6px; text-transform: none; }
@@ -38,13 +36,15 @@ body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono
 table { width: 100%; border-collapse: collapse; }
 td { padding: 2px 5px; font-size: 10px; }
 td:last-child { text-align: right; }
-.hist-wrap { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
-.hist-bar { width: 8px; height: 14px; border-radius: 2px; }
+.hist-scroll { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+.hist-inner { display: flex; gap: 2px; }
+.hist-bar { width: 8px; height: 14px; border-radius: 2px; flex-shrink: 0; }
 .hist-bar.g { background: var(--green); } .hist-bar.r { background: var(--red); } .hist-bar.x { background: var(--gray); }
 .sym-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 10px; }
-.sym-name { width: 80px; font-weight: bold; }
-.sym-trades { width: 55px; text-align: right; color: var(--blue); flex-shrink: 0; }
-.logs { max-height: 400px; overflow-y: auto; font-size: 10px; line-height: 1.3; word-break: break-all; }
+.sym-name { width: 85px; font-weight: bold; flex-shrink: 0; }
+.sym-trades { width: 50px; text-align: right; color: var(--blue); flex-shrink: 0; }
+.sym-hist { flex: 1; min-width: 0; }
+.logs { max-height: 420px; overflow-y: auto; font-size: 10px; line-height: 1.3; word-break: break-all; }
 .logs .log-line { padding: 1px 0; }
 .footer { text-align: center; padding: 8px; color: var(--dim); font-size: 10px; }
 </style>
@@ -94,13 +94,13 @@ td:last-child { text-align: right; }
 
     <!-- Database -->
     <div class="card">
-      <h2>Database</h2>
-      <table>
-        <tr v-for="(v,k) in s.dbCounts" :key="k">
-          <td>{{ k }}</td><td>{{ fmt(v) }}</td>
-        </tr>
-      </table>
-      <div class="row" style="margin-top:6px"><span class="lbl">Total size</span><span class="val">{{ s.dbSizeMB }} MB</span></div>
+      <h2>Database <span class="badge">{{ s.dbSizeMB }} MB</span></h2>
+      <div style="max-height:200px;overflow-y:auto">
+        <div class="row" v-for="(v,k) in s.dbPerSym" :key="k" style="font-size:10px">
+          <span>{{ k }}</span><span style="color:var(--blue)">{{ fmt(v) }} rows</span>
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px" v-if="Object.keys(s.dbPerSym).length===0"><span class="lbl">No data yet</span></div>
     </div>
   </div>
 
@@ -108,15 +108,19 @@ td:last-child { text-align: right; }
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 10px 10px">
     <div class="card">
       <h2>Instruments <span class="badge">{{ symbols.length }} total · green=agg red=raw gray=none</span></h2>
-      <div style="max-height:420px;overflow-y:auto">
+      <div style="max-height:420px;overflow-y:auto" ref="instScroll">
         <div class="sym-row" v-for="sym in symbols" :key="sym.name">
           <span class="sym-name">{{ sym.name }}</span>
-          <div class="hist-wrap" :title="sym.name">
-            <span v-for="(h,i) in sym.history" :key="i"
-              :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
-              :title="fmtMin(h.minute)+': '+(h.hasAgg?'agg':h.hasRaw?'raw':'none')"></span>
-          </div>
           <span class="sym-trades">{{ fmt(sym.trades) }}</span>
+          <div class="sym-hist">
+            <div class="hist-scroll" :ref="el => histRefs[sym.name] = el">
+              <div class="hist-inner">
+                <span v-for="(h,i) in sym.history" :key="i"
+                  :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
+                  :title="fmtMin(h.minute)+': '+(h.hasAgg?'agg':h.hasRaw?'raw':'none')"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -139,20 +143,40 @@ const { createApp, ref, nextTick, watch, reactive } = Vue;
 createApp({
   setup() {
     const logsEl = ref(null);
+    const instScroll = ref(null);
+    const histRefs = reactive({});
     const s = reactive({
       healthText:'loading',healthColor:'yellow',dbHealthy:false,wsConnected:0,wsTotal:0,version:'',uptime:'',
       total:0,tps:0,queue:0,cores:0,loadStr:'0',loadPct:0,loadColor:'g',
       heapUsed:0,heapMax:1,nonHeap:0,heapPct:0,heapColor:'g',
       diskTotal:0,diskFree:0,diskPct:0,diskColor:'g',
-      dbCounts:{},dbSizeMB:0,logs:[],now:''
+      dbPerSym:{},dbSizeMB:0,logs:[],now:''
     });
     const symMap = reactive({});
     const symbols = ref([]);
     const activeCount = ref(0);
-    let historyBusy = 0;
+    let histPending = 0;
+    let scrollTimeout = null;
+    let userScrolled = false;
 
     function fmt(n) { return !n&&n!==0?'—':Number(n).toLocaleString(); }
     function fmtMin(ts) { if(!ts) return ''; const d=new Date(ts); return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0'); }
+
+    function autoScrollHistograms() {
+      if (userScrolled) return;
+      Object.values(histRefs).forEach(el => {
+        if (el) el.scrollLeft = el.scrollWidth;
+      });
+    }
+
+    function onHistScroll() {
+      userScrolled = true;
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        userScrolled = false;
+        autoScrollHistograms();
+      }, 5000);
+    }
 
     async function fetchData() {
       try {
@@ -177,83 +201,103 @@ createApp({
         s.queue=st.metrics?.batchQueueSize??0;
 
         const sy=st.system||{};
-        s.cores=sy.availableProcessors??'—';
-        const ld=(sy.loadAverage??0);
-        s.loadStr=Number(ld).toFixed(2);
-        s.loadPct=Math.min(100,(ld/(s.cores||1)*100));
-        s.loadColor=s.loadPct>80?'r':s.loadPct>50?'y':'g';
+        const cores = Number(sy.availableProcessors) || 1;
+        s.cores = cores;
+        const ld = Number(sy.loadAverage) || 0;
+        s.loadStr = ld.toFixed(2);
+        s.loadPct = Math.min(100, (ld / cores * 50));  // load % = load/cores*50 (rough)
+        s.loadColor = s.loadPct > 80 ? 'r' : s.loadPct > 40 ? 'y' : 'g';
 
         const m=sy.memory||{};
-        s.heapUsed=m.heapUsedMB??0; s.heapMax=m.heapMaxMB??1; s.nonHeap=m.nonHeapUsedMB??0;
-        s.heapPct=Math.min(100,(s.heapUsed/s.heapMax*100)||0);
-        s.heapColor=s.heapPct>80?'r':s.heapPct>60?'y':'g';
+        s.heapUsed = m.heapUsedMB ?? 0;
+        s.heapMax = m.heapMaxMB ?? 1;
+        s.nonHeap = m.nonHeapUsedMB ?? 0;
+        s.heapPct = Math.min(100, (s.heapUsed / s.heapMax * 100) || 0);
+        s.heapColor = s.heapPct > 80 ? 'r' : s.heapPct > 60 ? 'y' : 'g';
 
         const dk=sy.disk||{};
-        s.diskTotal=dk.totalMB??0; s.diskFree=dk.freeMB??0;
-        s.diskPct=dk.usedPercent??0;
-        s.diskColor=s.diskPct>80?'r':s.diskPct>60?'y':'g';
+        s.diskTotal = dk.totalMB ?? 0;
+        s.diskFree = dk.freeMB ?? 0;
+        s.diskPct = dk.usedPercent ?? 0;
+        s.diskColor = s.diskPct > 80 ? 'r' : s.diskPct > 60 ? 'y' : 'g';
 
-        const db=st.database||{};
-        s.dbCounts={
-          rawTrades: db.rawTrades??0,
-          aggregates: db.aggregates??0,
-          windows: db.windows??0
-        };
-        s.dbSizeMB=db.dbSizeMB??'—';
+        // per-symbol DB stats from status.database.tableCounts
+        const db = st.database || {};
+        s.dbPerSym = {};
+        const tc = db.tableCounts || {};
+        Object.entries(tc).forEach(([k,v]) => {
+          const name = k.replace(/^(raw_trades|aggregates|filtered_trades|volume_windows)_/, '');
+          if (!s.dbPerSym[name]) s.dbPerSym[name] = 0;
+          s.dbPerSym[name] += (v || 0);
+        });
+        s.dbSizeMB = db.dbSizeMB ?? '—';
 
-        s.logs=Array.isArray(ilogs)?ilogs:[];
+        s.logs = Array.isArray(ilogs) ? ilogs : [];
 
-        // update instruments in-place (smooth)
-        const instruments=Array.isArray(inst)?inst:[];
-        const xs=Array.isArray(ex)?ex:[];
-        const allSym=xs.flatMap(x=>x.symbols.map(sym=>sym.toUpperCase())).sort();
-        let act=0;
-
+        // instruments: smooth in-place update
+        const instruments = Array.isArray(inst) ? inst : [];
+        const xs = Array.isArray(ex) ? ex : [];
+        const allSym = xs.flatMap(x => x.symbols.map(sym => sym.toUpperCase())).sort();
+        let act = 0;
         const nowList = new Set();
+
         allSym.forEach(symName => {
-          const found = instruments.find(i=>i.symbol===symName);
+          const found = instruments.find(i => i.symbol === symName);
           if (!symMap[symName]) {
-            symMap[symName] = reactive({name:symName, trades:0, history:[]});
+            symMap[symName] = reactive({ name: symName, trades: 0, history: [] });
           }
           symMap[symName].trades = found?.totalTrades ?? 0;
-          if ((found?.totalTrades??0) > 0) act++;
+          if ((found?.totalTrades ?? 0) > 0) act++;
           nowList.add(symName);
         });
         activeCount.value = act;
-        // remove stale
         Object.keys(symMap).forEach(k => { if (!nowList.has(k)) delete symMap[k]; });
         symbols.value = Object.values(symMap);
 
-        // fetch history (rate-limited: 1 batch per refresh cycle)
-        if (historyBusy <= 0) {
-          historyBusy = 1;
+        // fetch history
+        if (histPending <= 0) {
+          histPending = allSym.length;
           allSym.forEach(symName => {
-            fetch('/api/history/'+symName+'?minutes=60').then(r=>r.json()).then(hist=>{
-              if (Array.isArray(hist) && symMap[symName]) symMap[symName].history = hist;
-            }).catch(()=>{}).finally(()=>{ historyBusy--; });
+            fetch('/api/history/' + symName + '?minutes=60').then(r => r.json()).then(hist => {
+              if (Array.isArray(hist) && symMap[symName]) {
+                symMap[symName].history = hist;
+                nextTick(() => autoScrollHistograms());
+              }
+            }).catch(() => {}).finally(() => { histPending--; });
           });
         }
 
-        s.now=new Date().toLocaleTimeString();
-      } catch(e) { console.warn('fetch err',e); }
+        s.now = new Date().toLocaleTimeString();
+      } catch(e) { console.warn('fetch err', e); }
     }
 
     function fmUp(ms) {
-      if(!ms) return '—';
-      const ss=Math.floor(ms/1000),mm=Math.floor(ss/60),hh=Math.floor(mm/60);
-      if(hh>0) return hh+'h '+(mm%60)+'m';
-      if(mm>0) return mm+'m '+(ss%60)+'s';
-      return ss+'s';
+      if (!ms) return '—';
+      const ss = Math.floor(ms / 1000), mm = Math.floor(ss / 60), hh = Math.floor(mm / 60);
+      if (hh > 0) return hh + 'h ' + (mm % 60) + 'm';
+      if (mm > 0) return mm + 'm ' + (ss % 60) + 's';
+      return ss + 's';
+    }
+
+    // attach scroll listeners to hist refs
+    function attachScrollListeners() {
+      Object.values(histRefs).forEach(el => {
+        if (el && !el._listenerAttached) {
+          el.addEventListener('scroll', onHistScroll);
+          el._listenerAttached = true;
+        }
+      });
     }
 
     fetchData();
     setInterval(fetchData, 5000);
+    setInterval(attachScrollListeners, 1000);
 
     watch(() => s.logs.length, () => {
-      nextTick(() => { const el=logsEl.value; if(el) el.scrollTop=el.scrollHeight; });
+      nextTick(() => { const el = logsEl.value; if (el) el.scrollTop = el.scrollHeight; });
     });
 
-    return { s, symbols, activeCount, fmt, fmtMin, logsEl };
+    return { s, symbols, activeCount, histRefs, fmt, fmtMin, logsEl, instScroll };
   }
 }).mount('#app');
 </script>
