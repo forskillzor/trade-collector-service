@@ -87,7 +87,7 @@ class AggregateProcessorTest {
             { assertEquals(start + 3_600_000, AggregateProcessor.calculateEndTime(start, "1h")) },
             { assertEquals(start + 14_400_000, AggregateProcessor.calculateEndTime(start, "4h")) },
             { assertEquals(start + 86_400_000, AggregateProcessor.calculateEndTime(start, "1d")) },
-            { assertEquals(start + 60_000, AggregateProcessor.calculateEndTime(start, "unknown")) }
+            { assertEquals(start + 1_000, AggregateProcessor.calculateEndTime(start, "unknown")) }
         )
     }
 

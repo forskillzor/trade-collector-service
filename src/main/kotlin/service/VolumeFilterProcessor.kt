@@ -5,7 +5,6 @@ import com.aandios.storage.postgres.TradeDAO
 import com.tdunning.math.stats.MergingDigest
 import mu.KotlinLogging
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
@@ -25,21 +24,21 @@ class VolumeFilterProcessor(
     private val filteredFlushSize = 100
     private val chunksTarget = 100
     private val chunkSize = (windowSize / chunksTarget).coerceAtLeast(20)
-    private val alpha: BigDecimal = BigDecimal.ONE.divide(BigDecimal(windowSize), 10, RoundingMode.HALF_UP)
-    private val oneMinusAlpha: BigDecimal = BigDecimal.ONE.subtract(alpha)
+    private val alpha: Double = 1.0 / windowSize
+    private val oneMinusAlpha: Double = 1.0 - alpha
     private val initialized = ConcurrentHashMap.newKeySet<String>()
 
     data class Chunk(
         var count: Int = 0,
-        var sum: BigDecimal = BigDecimal.ZERO,
-        var sumSquared: BigDecimal = BigDecimal.ZERO,
+        var sum: Double = 0.0,
+        var sumSquared: Double = 0.0,
         val digest: MergingDigest = MergingDigest(100.0)
     ) {
-        fun add(volume: BigDecimal) {
+        fun add(volume: Double) {
             count++
-            sum = sum.add(volume)
-            sumSquared = sumSquared.add(volume.multiply(volume))
-            digest.add(volume.toDouble())
+            sum += volume
+            sumSquared += volume * volume
+            digest.add(volume)
         }
     }
 
@@ -51,10 +50,10 @@ class VolumeFilterProcessor(
         var currentChunk: Chunk = Chunk(),
         var chunkedCount: Long = 0,
         var totalTrades: Int = 0,
-        var ewmaMean: BigDecimal = BigDecimal.ZERO,
-        var ewmaVar: BigDecimal = BigDecimal.ZERO,
-        var minVolume: BigDecimal = BigDecimal.ZERO,
-        var maxVolume: BigDecimal = BigDecimal.ZERO,
+        var ewmaMean: Double = 0.0,
+        var ewmaVar: Double = 0.0,
+        var minVolume: Double = 0.0,
+        var maxVolume: Double = 0.0,
         var digest: MergingDigest? = null,
         var volumeThreshold: BigDecimal = BigDecimal.ZERO,
         var windowStartTime: Long = 0,
@@ -62,7 +61,7 @@ class VolumeFilterProcessor(
     )
 
     fun processTrade(trade: Trade) {
-        val key = "${trade.exchange}_${trade.symbol}"
+        val key = trade.key
         val lock = windowLocks.getOrPut(key) { Any() }
 
         synchronized(lock) {
@@ -78,11 +77,11 @@ class VolumeFilterProcessor(
             }
 
             val window = slidingWindows[key]!!
-            val volumeUsd = trade.getVolumeUsd()
+            val volumeUsd = trade.getVolumeUsd().toDouble()
 
-            window.ewmaMean = alpha.multiply(volumeUsd).add(oneMinusAlpha.multiply(window.ewmaMean))
-            val diff = volumeUsd.subtract(window.ewmaMean)
-            window.ewmaVar = alpha.multiply(diff.multiply(diff)).add(oneMinusAlpha.multiply(window.ewmaVar))
+            window.ewmaMean = alpha * volumeUsd + oneMinusAlpha * window.ewmaMean
+            val diff = volumeUsd - window.ewmaMean
+            window.ewmaVar = alpha * diff * diff + oneMinusAlpha * window.ewmaVar
 
             if (window.totalTrades == 0) {
                 window.minVolume = volumeUsd
@@ -112,7 +111,7 @@ class VolumeFilterProcessor(
 
             if (shouldRecalculateWindow(key)) {
                 recalculateWindowStats(window)
-                checkAndSaveFilteredTrade(trade, window, volumeUsd)
+                checkAndSaveFilteredTrade(trade, window, BigDecimal.valueOf(volumeUsd))
                 dao.cleanupOldRawTrades(window.symbol, windowSize.toLong())
             }
         }
@@ -127,7 +126,7 @@ class VolumeFilterProcessor(
             log.info { "Loaded ${trades.size} trades from DB for ${window.exchange}/${window.symbol}" }
 
             trades.forEach { trade ->
-                val volumeUsd = trade.getVolumeUsd()
+                val volumeUsd = trade.getVolumeUsd().toDouble()
 
                 if (window.totalTrades == 0) {
                     window.minVolume = volumeUsd
@@ -172,24 +171,19 @@ class VolumeFilterProcessor(
         val totalSize = window.chunkedCount.toInt() + window.currentChunk.count
         if (totalSize == 0) return
 
-        var totalSum = BigDecimal.ZERO
-        var totalSumSq = BigDecimal.ZERO
+        var totalSum = 0.0
+        var totalSumSq = 0.0
         window.chunks.forEach {
-            totalSum = totalSum.add(it.sum)
-            totalSumSq = totalSumSq.add(it.sumSquared)
+            totalSum += it.sum
+            totalSumSq += it.sumSquared
         }
-        totalSum = totalSum.add(window.currentChunk.sum)
-        totalSumSq = totalSumSq.add(window.currentChunk.sumSquared)
+        totalSum += window.currentChunk.sum
+        totalSumSq += window.currentChunk.sumSquared
 
-        val n = BigDecimal(totalSize)
-        val avgVolume = totalSum.divide(n, 8, RoundingMode.HALF_UP)
-        val variance = try {
-            val meanSquared = avgVolume.multiply(avgVolume)
-            val meanOfSquares = totalSumSq.divide(n, 8, RoundingMode.HALF_UP)
-            val v = meanOfSquares.subtract(meanSquared)
-            if (v >= BigDecimal.ZERO) v else BigDecimal.ZERO
-        } catch (e: Exception) { BigDecimal.ZERO }
-        val stddevVolume = try { BigDecimal.valueOf(sqrt(variance.toDouble())) } catch (e: Exception) { BigDecimal.ZERO }
+        val n = totalSize.toDouble()
+        val avgVolume = totalSum / n
+        val variance = ((totalSumSq / n) - (avgVolume * avgVolume)).coerceAtLeast(0.0)
+        val stddevVolume = sqrt(variance)
 
         val p50Volume = BigDecimal.valueOf(merged.quantile(0.5))
         val p95Volume = BigDecimal.valueOf(merged.quantile(0.95))
@@ -202,9 +196,11 @@ class VolumeFilterProcessor(
             exchange = window.exchange, symbol = window.symbol,
             startTime = window.windowStartTime, endTime = window.windowEndTime,
             totalTrades = window.totalTrades,
-            minVolume = window.minVolume, maxVolume = window.maxVolume,
-            avgVolume = avgVolume, medianVolume = BigDecimal.valueOf(merged.quantile(0.5)),
-            stddevVolume = stddevVolume,
+            minVolume = BigDecimal.valueOf(window.minVolume),
+            maxVolume = BigDecimal.valueOf(window.maxVolume),
+            avgVolume = BigDecimal.valueOf(avgVolume),
+            medianVolume = p50Volume,
+            stddevVolume = BigDecimal.valueOf(stddevVolume),
             p50Volume = p50Volume, p95Volume = p95Volume, p98Volume = p98Volume, p99Volume = p99Volume,
             filterPercentile = filterPercentile, filterThreshold = volumeThreshold
         )

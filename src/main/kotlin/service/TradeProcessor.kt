@@ -5,7 +5,6 @@ import com.aandios.exchange.ExchangeAdapter
 import com.aandios.exchange.ExchangeAdapterFactory
 import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
-import java.time.Instant
 import kotlinx.coroutines.*
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +27,7 @@ class TradeProcessor(
     // Метрики
     private var totalTrades = 0L
     private var tradesPerSecond = 0
-    private var lastSecond = Instant.now().epochSecond
+    private var lastSecond = System.currentTimeMillis() / 1000
     private var lastTotalTrades = 0L
     private var lastFlushTime = 0L
 
@@ -73,15 +72,13 @@ class TradeProcessor(
                 totalTrades++
                 updateTps()
 
-                // Инициализация статистики инструмента
-                val instrumentKey = "${exchange}_${symbol}"
-                val stats = instrumentStats.getOrPut(instrumentKey) { InstrumentStats() }
+                val stats = instrumentStats.getOrPut(trade.key) { InstrumentStats() }
                 stats.totalTrades.incrementAndGet()
                 stats.lastTradeTime.set(System.currentTimeMillis())
 
                 // 1. Сохраняем в raw_trades (батчами)
                 batchProcessor.addTrade(trade)
-                stats.batchQueueSize.set(batchProcessor.getQueueSize(instrumentKey))
+                stats.batchQueueSize.set(batchProcessor.getQueueSize(trade.key))
 
                 // 2. Обрабатываем для фильтрации больших сделок
                 volumeFilterProcessor.processTrade(trade)
@@ -113,7 +110,7 @@ class TradeProcessor(
     }
 
     private fun updateTps() {
-        val currentSecond = Instant.now().epochSecond
+        val currentSecond = System.currentTimeMillis() / 1000
         if (currentSecond != lastSecond) {
             tradesPerSecond = (totalTrades - lastTotalTrades).toInt()
             lastTotalTrades = totalTrades
@@ -139,13 +136,11 @@ class TradeProcessor(
         val result = mutableMapOf<String, Map<String, Any>>()
 
         instrumentStats.forEach { (key, stats) ->
-            val parts = key.split("_", limit = 2)
-            val exchange = parts.getOrElse(0) { "" }
-            val symbol = parts.getOrElse(1) { key }
             val fs = filterStats[key] as? Map<*, *>
+            val symbol = key.substringAfter("_")
 
             result[symbol] = mapOf(
-                "exchange" to exchange,
+                "exchange" to key.substringBefore("_"),
                 "symbol" to symbol,
                 "totalTrades" to stats.totalTrades.get(),
                 "lastTradeTime" to stats.lastTradeTime.get(),

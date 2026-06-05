@@ -13,6 +13,8 @@ data class Trade(
     val quantity: BigDecimal,
     val isBuy: Boolean
 ) {
+    val key: String by lazy { "${exchange}_${symbol}" }
+
     fun toLocalDateTime(): LocalDateTime {
         return LocalDateTime.ofInstant(
             Instant.ofEpochMilli(timestamp),

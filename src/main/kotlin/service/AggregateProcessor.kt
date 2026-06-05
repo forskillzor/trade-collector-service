@@ -6,7 +6,6 @@ import com.aandios.model.Trade
 import com.aandios.storage.postgres.TradeDAO
 import mu.KotlinLogging
 import java.math.BigDecimal
-import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 private val log = KotlinLogging.logger {}
@@ -91,7 +90,7 @@ class AggregateProcessor(
         timeframes.forEach { timeframe ->
             val candleStart = calculateCandleStart(trade.timestamp, timeframe)
 
-            val symbolCandles = activeCandles.getOrPut("${trade.exchange}_${trade.symbol}") {
+            val symbolCandles = activeCandles.getOrPut(trade.key) {
                 ConcurrentHashMap()
             }
 
@@ -146,19 +145,8 @@ class AggregateProcessor(
 
     companion object {
         fun calculateCandleStart(timestamp: Long, timeframe: String): Long {
-            val instant = Instant.ofEpochMilli(timestamp)
-            val seconds = instant.epochSecond
-
-            return when (timeframe) {
-                "1m" -> seconds - (seconds % 60)
-                "5m" -> seconds - (seconds % 300)
-                "15m" -> seconds - (seconds % 900)
-                "30m" -> seconds - (seconds % 1800)
-                "1h" -> seconds - (seconds % 3600)
-                "4h" -> seconds - (seconds % 14400)
-                "1d" -> seconds - (seconds % 86400)
-                else -> seconds
-            } * 1000
+            val stepMs = timeframeStepMs(timeframe)
+            return timestamp - (timestamp % stepMs)
         }
 
         fun calculateEndTime(startTime: Long, timeframe: String): Long {
@@ -174,7 +162,7 @@ class AggregateProcessor(
                 "1h" -> 3600000
                 "4h" -> 14400000
                 "1d" -> 86400000
-                else -> 60000
+                else -> 1000
             }
         }
     }
