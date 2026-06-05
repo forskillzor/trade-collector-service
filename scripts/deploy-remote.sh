@@ -81,20 +81,20 @@ echo "✅ Файлы распакованы"
 
 # --- 6. Остановить сервис -----------------------------------------------------
 echo "🛑 Останавливаю сервис..."
-systemctl stop trade-collector.service 2>/dev/null || true
+sudo systemctl stop trade-collector.service 2>/dev/null || true
 sleep 2
 
 # --- 7. Установить/обновить systemd сервис (если ещё не) ------------------------
 if [ -f "$RELEASE_DIR/trade-collector.service" ]; then
     if ! systemctl is-enabled trade-collector.service >/dev/null 2>&1; then
         echo "🔧 Устанавливаю systemd сервис..."
-        cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
-        systemctl daemon-reload
-        systemctl enable trade-collector.service
+        sudo cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable trade-collector.service
         echo "✅ Сервис установлен и включен"
     else
-        cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
-        systemctl daemon-reload
+        sudo cp "$RELEASE_DIR/trade-collector.service" /etc/systemd/system/trade-collector.service
+        sudo systemctl daemon-reload
         echo "✅ Сервис обновлён"
     fi
 fi
@@ -117,7 +117,7 @@ fi
 
 # --- 11. Запустить сервис -----------------------------------------------------
 echo "🚀 Запускаю сервис..."
-systemctl start trade-collector.service
+sudo systemctl start trade-collector.service
 
 # --- 12. Health check с повторными попытками ----------------------------------
 echo "🏥 Проверяю здоровье сервиса..."
@@ -132,9 +132,9 @@ for i in $(seq 1 $HEALTH_RETRIES); do
 
         if [ -n "$PREV_VERSION" ] && [ -d "$APP_DIR/releases/$PREV_VERSION" ]; then
             echo "🔙 Откатываю на $PREV_VERSION..."
-            systemctl stop trade-collector.service 2>/dev/null || true
+            sudo systemctl stop trade-collector.service 2>/dev/null || true
             ln -sfn "releases/$PREV_VERSION" "$APP_DIR/current"
-            systemctl start trade-collector.service
+            sudo systemctl start trade-collector.service
 
             if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
                 echo "✅ Откат на $PREV_VERSION успешен"
