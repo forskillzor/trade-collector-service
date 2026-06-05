@@ -6,53 +6,46 @@
 <title>Trade Collector — Dashboard</title>
 <style>
 :root {
-  --bg: #0a0e14;
-  --panel: #12171f;
-  --border: #1e2733;
-  --text: #bfc7d5;
-  --dim: #5c6773;
-  --green: #73d0a1;
-  --red: #f07178;
-  --yellow: #ffd173;
-  --blue: #65baf0;
-  --purple: #c792ea;
+  --bg: #0a0e14; --panel: #12171f; --border: #1e2733;
+  --text: #bfc7d5; --dim: #5c6773; --green: #73d0a1;
+  --red: #f07178; --yellow: #ffd173; --blue: #65baf0;
+  --purple: #c792ea; --gray: #3a3f4b;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--text); font: 13px/1.5 'JetBrains Mono', 'Fira Code', monospace; }
-.header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
-.header h1 { font-size: 16px; color: var(--blue); }
-.header .status { font-size: 12px; }
-.header .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.dot.green { background: var(--green); }
-.dot.red { background: var(--red); }
-.dot.yellow { background: var(--yellow); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; padding: 12px; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 14px; }
-.card h2 { font-size: 12px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; letter-spacing: 1px; }
-.card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 8px; text-transform: none; }
-.row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid var(--border); }
+body { background: var(--bg); color: var(--text); font: 12px/1.4 'JetBrains Mono','Fira Code',monospace; }
+.header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; }
+.header h1 { font-size: 14px; color: var(--blue); }
+.header .status { font-size: 11px; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+.dot.g { background: var(--green); } .dot.r { background: var(--red); } .dot.y { background: var(--yellow); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 10px; padding: 10px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 12px; }
+.card h2 { font-size: 11px; text-transform: uppercase; color: var(--purple); margin-bottom: 8px; letter-spacing: 1px; }
+.card h2 .badge { font-size: 10px; color: var(--dim); margin-left: 6px; text-transform: none; }
+.row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid var(--border); }
 .row:last-child { border-bottom: none; }
-.label { color: var(--dim); }
-.value { font-weight: bold; }
-.value.big { font-size: 18px; color: var(--blue); }
-.value.green { color: var(--green); }
-.value.yellow { color: var(--yellow); }
-.value.red { color: var(--red); }
-.bar-track { height: 6px; background: var(--border); border-radius: 3px; margin-top: 8px; }
-.bar-fill { height: 100%; border-radius: 3px; transition: width 1s; }
-.bar-fill.green { background: var(--green); }
-.bar-fill.yellow { background: var(--yellow); }
-.bar-fill.red { background: var(--red); }
-.bar-fill.blue { background: var(--blue); }
+.lbl { color: var(--dim); }
+.val { font-weight: bold; }
+.val.big { font-size: 16px; color: var(--blue); }
+.val.g { color: var(--green); } .val.y { color: var(--yellow); } .val.r { color: var(--red); }
+.bar { height: 5px; background: var(--border); border-radius: 3px; margin-top: 6px; }
+.bar-f { height: 100%; border-radius: 3px; transition: width 1s; }
+.bar-f.g { background: var(--green); } .bar-f.y { background: var(--yellow); } .bar-f.r { background: var(--red); } .bar-f.b { background: var(--blue); }
+.mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mbox { text-align: center; } .mbox .num { font-size: 20px; color: var(--blue); } .mbox .lbl { font-size: 9px; color: var(--dim); }
 table { width: 100%; border-collapse: collapse; }
-td { padding: 3px 6px; font-size: 11px; }
+td { padding: 2px 5px; font-size: 10px; }
 td:last-child { text-align: right; }
-.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.metric-box { text-align: center; }
-.metric-box .num { font-size: 24px; color: var(--blue); }
-.metric-box .lbl { font-size: 10px; color: var(--dim); }
-.flex { display: flex; gap: 12px; align-items: center; }
-.footer { text-align: center; padding: 10px; color: var(--dim); font-size: 10px; }
+.hist-wrap { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+.hist-bar { width: 8px; height: 14px; border-radius: 2px; transition: background 0.3s; }
+.hist-bar.g { background: var(--green); } .hist-bar.r { background: var(--red); } .hist-bar.x { background: var(--gray); }
+.sym-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--border); font-size: 10px; }
+.sym-row:last-child { border-bottom: none; }
+.sym-name { width: 80px; font-weight: bold; }
+.sym-trades { width: 50px; text-align: right; color: var(--blue); }
+.logs { max-height: 300px; overflow-y: auto; font-size: 10px; line-height: 1.3; }
+.logs .log-line { padding: 1px 0; white-space: pre-wrap; }
+.footer { text-align: center; padding: 8px; color: var(--dim); font-size: 10px; }
 </style>
 </head>
 <body>
@@ -60,8 +53,8 @@ td:last-child { text-align: right; }
   <div class="header">
     <h1>⬡ Trade Collector</h1>
     <div class="status">
-      <span :class="'dot ' + healthColor"></span>
-      {{ healthText }} · v{{ version }} · uptime {{ uptime }}
+      <span :class="'dot ' + (state.healthColor=='green'?'g':state.healthColor=='yellow'?'y':'r')"></span>
+      {{ state.healthText }} · v{{ state.version }} · up {{ state.uptime }}
     </div>
   </div>
 
@@ -69,152 +62,157 @@ td:last-child { text-align: right; }
     <!-- Health -->
     <div class="card">
       <h2>Health</h2>
-      <div class="row"><span class="label">Status</span><span :class="'value ' + healthColor">{{ healthText }}</span></div>
-      <div class="row"><span class="label">Database</span><span :class="'value ' + (dbHealthy ? 'green' : 'red')">{{ dbHealthy ? 'OK' : 'DOWN' }}</span></div>
-      <div class="row"><span class="label">WebSockets</span><span class="value">{{ wsConnected }}/{{ wsTotal }}</span></div>
-      <div class="bar-track"><div class="bar-fill blue" :style="{width: wsPct + '%'}"></div></div>
-      <table v-if="exchanges.length" style="margin-top:8px">
-        <tr v-for="x in exchanges" :key="x.name">
-          <td>{{ x.name }}</td><td>{{ x.symbols.length }} pairs</td><td :class="x.enabled ? 'green' : 'dim'" style="color:var(--green)">{{ x.enabled ? 'ON' : 'OFF' }}</td>
-        </tr>
-      </table>
+      <div class="row"><span class="lbl">Status</span><span :class="'val '+(healthColor=='green'?'g':healthColor=='yellow'?'y':'r')">{{ state.healthText }}</span></div>
+      <div class="row"><span class="lbl">Database</span><span :class="'val '+(dbHealthy?'g':'r')">{{ dbHealthy ? 'OK' : 'DOWN' }}</span></div>
+      <div class="row"><span class="lbl">WebSockets</span><span class="val">{{ state.wsConnected }}/{{ state.wsTotal }}</span></div>
+      <div class="row"><span class="lbl">Symbols</span><span class="val">{{ state.instruments.length }}</span></div>
     </div>
 
     <!-- Trades -->
     <div class="card">
-      <h2>Trades <span class="badge">{{ tps }}/s</span></h2>
-      <div class="metric-grid">
-        <div class="metric-box"><div class="num">{{ fmtNum(total) }}</div><div class="lbl">Total</div></div>
-        <div class="metric-box"><div class="num">{{ tps }}</div><div class="lbl">TPS</div></div>
-        <div class="metric-box"><div class="num">{{ queue }}</div><div class="lbl">Queue</div></div>
-        <div class="metric-box"><div class="num">{{ instruments }}</div><div class="lbl">Instruments</div></div>
+      <h2>Trades <span class="badge">{{ state.tps }}/s</span></h2>
+      <div class="mgrid">
+        <div class="mbox"><div class="num">{{ fmt(total) }}</div><div class="lbl">Total</div></div>
+        <div class="mbox"><div class="num">{{ state.tps }}</div><div class="lbl">TPS</div></div>
+        <div class="mbox"><div class="num">{{ state.queue }}</div><div class="lbl">Queue</div></div>
+        <div class="mbox"><div class="num">{{ state.instruments.length }}</div><div class="lbl">Active sym</div></div>
       </div>
     </div>
 
     <!-- System -->
     <div class="card">
-      <h2>System <span class="badge">{{ cores }} cores</span></h2>
-      <div class="row"><span class="label">Load</span><span class="value">{{ load }}</span></div>
-      <div class="row"><span class="label">Heap</span><span class="value">{{ heapUsed }} / {{ heapMax }} MB</span></div>
-      <div class="bar-track"><div class="bar-fill" :class="heapColor" :style="{width: heapPct + '%'}"></div></div>
-      <div class="row"><span class="label">Non-Heap</span><span class="value">{{ nonHeap }} MB</span></div>
-      <div class="row"><span class="label">Disk</span><span class="value">{{ diskFree }} MB free / {{ diskTotal }} MB</span></div>
-      <div class="bar-track"><div class="bar-fill" :class="diskColor" :style="{width: diskPct + '%'}"></div></div>
+      <h2>System <span class="badge">{{ state.cores }} core</span></h2>
+      <div class="row"><span class="lbl">Load</span><span class="val">{{ state.loadStr }}</span></div>
+      <div class="bar"><div class="bar-f" :class="loadColor" :style="{width: loadPct+'%'}"></div></div>
+      <div class="row"><span class="lbl">Heap</span><span class="val">{{ state.heapUsed }} / {{ state.heapMax }} MB</span></div>
+      <div class="bar"><div class="bar-f" :class="heapColor" :style="{width: heapPct+'%'}"></div></div>
+      <div class="row"><span class="lbl">Non-Heap</span><span class="val">{{ state.nonHeap }} MB</span></div>
+      <div class="row"><span class="lbl">Disk</span><span class="val">{{ state.diskFree }} / {{ state.diskTotal }} MB</span></div>
+      <div class="bar"><div class="bar-f" :class="diskColor" :style="{width: diskPct+'%'}"></div></div>
     </div>
 
-    <!-- Database -->
+    <!-- Instruments -->
     <div class="card">
-      <h2>Database</h2>
-      <table>
-        <tr><td>raw_trades</td><td>{{ db.rawTrades | num }} rows</td><td>{{ db.rawTradesMB }} MB</td></tr>
-        <tr><td>filtered_trades</td><td>{{ db.filteredTrades | num }} rows</td><td>{{ db.filteredTradesMB }} MB</td></tr>
-        <tr><td>aggregates</td><td>{{ db.aggregates | num }} rows</td><td>{{ db.aggregatesMB }} MB</td></tr>
-        <tr><td>volume_windows</td><td>{{ db.windows | num }} rows</td><td>{{ db.volumeWindowsMB }} MB</td></tr>
-      </table>
-      <div class="row" style="margin-top:8px"><span class="label">Total size</span><span class="value">{{ db.dbSizeMB }} MB</span></div>
-    </div>
-
-    <!-- Filter Stats -->
-    <div class="card" v-if="filterKeys.length">
-      <h2>Volume Filters</h2>
-      <div v-for="k in filterKeys.slice(0,6)" :key="k">
-        <div class="row">
-          <span class="label">{{ k }}</span>
-          <span class="value">{{ filterStats[k].totalTrades | num }}</span>
+      <h2>Instruments <span class="badge">{{ state.instruments.length }} total</span></h2>
+      <div style="max-height:340px;overflow-y:auto">
+        <div class="sym-row" v-for="ins in state.instruments" :key="ins.symbol">
+          <span class="sym-name">{{ ins.symbol }}</span>
+          <div class="hist-wrap" :title="ins.symbol+' last 60min'">
+            <span v-for="(h,i) in (ins.history||[])" :key="i"
+              :class="'hist-bar '+(h.hasAgg?'g':h.hasRaw?'r':'x')"
+              :title="fmtMin(h.minute)+': '+(h.hasAgg?'agg':h.hasRaw?'raw':'none')"></span>
+          </div>
+          <span class="sym-trades">{{ fmt(ins.totalTrades) }}</span>
         </div>
       </div>
     </div>
+
+    <!-- Logs -->
+    <div class="card">
+      <h2>Logs <span class="badge">{{ state.logs.length }} lines</span></h2>
+      <div class="logs" ref="logsEl">
+        <div class="log-line" v-for="(l,i) in state.logs" :key="i">{{ l }}</div>
+      </div>
+    </div>
   </div>
-  <div class="footer">auto-refresh every 5s · {{ now }}</div>
+  <div class="footer">auto-refresh 5s · {{ state.now }}</div>
 </div>
 
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script>
-const { createApp } = Vue;
+const { createApp, ref, nextTick, watch, reactive } = Vue;
 
 createApp({
-  data() {
-    return {
-      healthText: 'loading', healthColor: 'yellow',
-      dbHealthy: false, wsConnected: 0, wsTotal: 0,
-      version: '', uptime: '', exchanges: [],
-      total: 0, tps: 0, queue: 0, instruments: 0,
-      cores: 0, load: 0, heapUsed: 0, heapMax: 0, nonHeap: 0, heapPct: 0, heapColor: 'green',
-      diskTotal: 0, diskFree: 0, diskPct: 0, diskColor: 'green',
-      db: {}, filterStats: {}, filterKeys: [], now: ''
-    }
-  },
-  created() { this.fetch(); setInterval(() => this.fetch(), 5000); },
-  methods: {
-    fmtNum(n) { if (!n && n !== 0) return '—'; return n.toLocaleString(); },
-    async fetch() {
+  setup() {
+    const logsEl = ref(null);
+    const state = reactive({
+      healthText:'loading',healthColor:'yellow',dbHealthy:false,wsConnected:0,wsTotal:0,version:'',uptime:'',
+      total:0,tps:0,queue:0,cores:0,loadStr:'0',loadPct:0,loadColor:'g',
+      heapUsed:0,heapMax:1,nonHeap:0,heapPct:0,heapColor:'g',
+      diskTotal:0,diskFree:0,diskPct:0,diskColor:'g',
+      instruments:[],logs:[],now:''
+    });
+
+    function fmt(n) { return !n&&n!==0?'—':Number(n).toLocaleString(); }
+    function fmtMin(ts) { if(!ts) return ''; const d=new Date(ts); return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0'); }
+
+    async function fetchData() {
       try {
-        const [health, status] = await Promise.all([
-          fetch('/health').then(r => r.json()),
-          fetch('/status').then(r => r.json())
+        const [health,status,ex,ilogs,inst] = await Promise.all([
+          fetch('/health').then(r=>r.json()),
+          fetch('/status').then(r=>r.json()),
+          fetch('/exchanges').then(r=>r.json()),
+          fetch('/api/logs').then(r=>r.json()),
+          fetch('/api/instruments').then(r=>r.json())
         ]);
-        const s = status || {};
-        const h = health || {};
+        const h=health||{}, s=status||{};
 
-        this.healthText = h.status || 'unknown';
-        this.healthColor = h.status === 'healthy' ? 'green' : h.status === 'degraded' ? 'yellow' : 'red';
-        this.dbHealthy = h.checks?.database === 'ok';
-        this.wsConnected = h.checks?.websockets?.connected ?? 0;
-        this.wsTotal = h.checks?.websockets?.total ?? 0;
+        state.healthText=h.status||'unknown';
+        state.healthColor=h.status==='healthy'?'green':h.status==='degraded'?'yellow':'red';
+        state.dbHealthy=h.checks?.database==='ok';
+        state.wsConnected=h.checks?.websockets?.connected??0;
+        state.wsTotal=h.checks?.websockets?.total??0;
+        state.version=s.version||'—';
+        state.uptime=fmUp(s.uptime);
+        state.total=s.metrics?.totalTrades??0;
+        state.tps=s.metrics?.tradesPerSecond??0;
+        state.queue=s.metrics?.batchQueueSize??0;
 
-        this.version = s.version || '—';
-        this.uptime = this.fmtUptime(s.uptime);
-        this.total = s.metrics?.totalTrades ?? 0;
-        this.tps = s.metrics?.tradesPerSecond ?? 0;
-        this.queue = s.metrics?.batchQueueSize ?? 0;
-        this.instruments = s.metrics?.instruments ?? 0;
+        const sy=s.system||{};
+        state.cores=sy.availableProcessors??'—';
+        const ld=(sy.loadAverage??0);
+        state.loadStr=Number(ld).toFixed(2);
+        state.loadPct=Math.min(100,(ld/(state.cores||1)*100));
+        state.loadColor=state.loadPct>80?'r':state.loadPct>50?'y':'g';
 
-        const sys = s.system || {};
-        this.cores = sys.availableProcessors ?? '—';
-        this.load = (sys.loadAverage ?? 0).toFixed(2);
-        const mem = sys.memory || {};
-        this.heapUsed = mem.heapUsedMB ?? 0;
-        this.heapMax = mem.heapMaxMB ?? 1;
-        this.nonHeap = mem.nonHeapUsedMB ?? 0;
-        this.heapPct = Math.min(100, (this.heapUsed / this.heapMax * 100) || 0);
-        this.heapColor = this.heapPct > 80 ? 'red' : this.heapPct > 60 ? 'yellow' : 'green';
+        const m=sy.memory||{};
+        state.heapUsed=m.heapUsedMB??0; state.heapMax=m.heapMaxMB??1; state.nonHeap=m.nonHeapUsedMB??0;
+        state.heapPct=Math.min(100,(state.heapUsed/state.heapMax*100)||0);
+        state.heapColor=state.heapPct>80?'r':state.heapPct>60?'y':'g';
 
-        const dsk = sys.disk || {};
-        this.diskTotal = dsk.totalMB ?? 0;
-        this.diskFree = dsk.freeMB ?? 0;
-        this.diskPct = dsk.usedPercent ?? 0;
-        this.diskColor = this.diskPct > 80 ? 'red' : this.diskPct > 60 ? 'yellow' : 'green';
+        const dk=sy.disk||{};
+        state.diskTotal=dk.totalMB??0; state.diskFree=dk.freeMB??0;
+        state.diskPct=dk.usedPercent??0;
+        state.diskColor=state.diskPct>80?'r':state.diskPct>60?'y':'g';
 
-        const db = s.database || {};
-        this.db = {
-          rawTrades: db.rawTrades ?? 0,
-          filteredTrades: db.filteredTrades ?? 0,
-          aggregates: db.aggregates ?? 0,
-          windows: db.windows ?? 0,
-          dbSizeMB: db.dbSizeMB ?? 0,
-          ...(db.tableSizes || {})
-        };
+        state.logs=Array.isArray(ilogs)?ilogs:[];
 
-        this.filterStats = s.metrics?.filterStats || {};
-        this.filterKeys = Object.keys(this.filterStats);
+        const instruments=Array.isArray(inst)?inst:[];
+        const xs=Array.isArray(ex)?ex:[];
+        const allSym=xs.flatMap(x=>x.symbols.map(s=>s.toUpperCase()));
+        const merged=allSym.map(sym=>{
+          const found=instruments.find(i=>i.symbol===sym);
+          return {...(found||{}),symbol:sym,totalTrades:found?.totalTrades??0,history:found?.history||[]};
+        });
+        state.instruments=merged;
 
-        const xs = await fetch('/exchanges').then(r => r.json());
-        this.exchanges = Array.isArray(xs) ? xs : [];
+        // fetch history per symbol
+        merged.forEach((ins,idx)=>{
+          fetch('/api/history/'+ins.symbol+'?minutes=60').then(r=>r.json()).then(hist=>{
+            if(Array.isArray(hist)) state.instruments[idx].history=hist;
+          }).catch(()=>{});
+        });
 
-        this.now = new Date().toLocaleTimeString();
-      } catch(e) { console.warn('fetch error', e); }
-    },
-    fmtUptime(ms) {
-      if (!ms) return '—';
-      const s = Math.floor(ms / 1000);
-      const m = Math.floor(s / 60); const h = Math.floor(m / 60);
-      if (h > 0) return h + 'h ' + (m % 60) + 'm';
-      if (m > 0) return m + 'm ' + (s % 60) + 's';
-      return s + 's';
+        state.now=new Date().toLocaleTimeString();
+      } catch(e) { console.warn('fetch err',e); }
     }
-  },
-  filters: {
-    num(v) { if (!v && v !== 0) return '—'; return v.toLocaleString(); }
+
+    function fmUp(ms) {
+      if(!ms) return '—';
+      const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);
+      if(h>0) return h+'h '+(m%60)+'m';
+      if(m>0) return m+'m '+(s%60)+'s';
+      return s+'s';
+    }
+
+    fetchData();
+    setInterval(fetchData, 5000);
+
+    watch(() => state.logs.length, () => {
+      nextTick(() => { const el=logsEl.value; if(el) el.scrollTop=el.scrollHeight; });
+    });
+
+    return { state, fmt, fmtMin, logsEl };
   }
 }).mount('#app');
 </script>

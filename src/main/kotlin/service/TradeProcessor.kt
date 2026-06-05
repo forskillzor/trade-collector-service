@@ -134,6 +134,30 @@ class TradeProcessor(
         )
     }
 
+    fun getInstrumentDetails(): Map<String, Map<String, Any>> {
+        val filterStats = volumeFilterProcessor.getStats()
+        val result = mutableMapOf<String, Map<String, Any>>()
+
+        instrumentStats.forEach { (key, stats) ->
+            val parts = key.split("_", limit = 2)
+            val exchange = parts.getOrElse(0) { "" }
+            val symbol = parts.getOrElse(1) { key }
+            val fs = filterStats[key] as? Map<*, *>
+
+            result[symbol] = mapOf(
+                "exchange" to exchange,
+                "symbol" to symbol,
+                "totalTrades" to stats.totalTrades.get(),
+                "lastTradeTime" to stats.lastTradeTime.get(),
+                "batchQueueSize" to stats.batchQueueSize.get(),
+                "volumeThreshold" to (fs?.get("volumeThreshold") ?: 0),
+                "windowSize" to (fs?.get("windowSize") ?: 0),
+                "processedTrades" to (fs?.get("processedTrades") ?: 0)
+            )
+        }
+        return result
+    }
+
     fun shutdown() {
         batchProcessor.stop()
         volumeFilterProcessor.flushFilteredTrades()

@@ -521,6 +521,56 @@ class TradeDAO(
         }
     }
 
+    fun getHistory(symbol: String, minutes: Int = 60): List<Map<String, Any?>> {
+        ensureTables(symbol)
+        val cutoff = System.currentTimeMillis() - (minutes * 60_000L)
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                WITH minutes AS (
+                    SELECT generate_series(
+                        (SELECT COALESCE(MIN(start_time), ?) FROM ${tableName("aggregates", symbol)}),
+                        (SELECT COALESCE(MAX(start_time), ?) FROM ${tableName("aggregates", symbol)}),
+                        60000
+                    ) AS minute_start
+                ),
+                agg AS (
+                    SELECT start_time, 1 as has_agg FROM ${tableName("aggregates", symbol)}
+                    WHERE timeframe = '1m' AND start_time >= ?
+                ),
+                raw AS (
+                    SELECT (timestamp / 60000) * 60000 AS minute_start, 1 as has_raw
+                    FROM ${tableName("raw_trades", symbol)}
+                    WHERE timestamp >= ?
+                    GROUP BY minute_start
+                )
+                SELECT m.minute_start,
+                       COALESCE(a.has_agg, 0) as has_agg,
+                       COALESCE(r.has_raw, 0) as has_raw
+                FROM minutes m
+                LEFT JOIN agg a ON a.start_time = m.minute_start
+                LEFT JOIN raw r ON r.minute_start = m.minute_start
+                ORDER BY m.minute_start DESC
+                LIMIT ?
+            """).use { stmt ->
+                stmt.setLong(1, cutoff)
+                stmt.setLong(2, cutoff)
+                stmt.setLong(3, cutoff)
+                stmt.setLong(4, cutoff)
+                stmt.setInt(5, minutes)
+                val rs = stmt.executeQuery()
+                val results = mutableListOf<Map<String, Any?>>()
+                while (rs.next()) {
+                    results.add(mapOf(
+                        "minute" to rs.getLong("minute_start"),
+                        "hasAgg" to (rs.getInt("has_agg") > 0),
+                        "hasRaw" to (rs.getInt("has_raw") > 0)
+                    ))
+                }
+                results.reversed()
+            }
+        }
+    }
+
     fun ping(): Boolean {
         return try {
             dataSource.connection.use { conn ->

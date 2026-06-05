@@ -19,10 +19,14 @@
         </encoder>
     </appender>
 
+    <!-- Dashboard appender -->
+    <appender name="DASHBOARD" class="com.aandios.service.DashboardLogAppender" />
+
     <!-- Уровни логирования -->
     <root level="INFO">
         <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
+        <appender-ref ref="DASHBOARD" />
     </root>
 
     <!-- Наши логгеры -->

@@ -126,6 +126,42 @@ class MonitoringServer(
                             )
                             call.respondText(jmapper.writeValueAsString(data), ContentType.Application.Json)
                         }
+
+                        get("/api/logs") {
+                            val lines = LogCapture.getLines()
+                            call.respondText(jmapper.writeValueAsString(lines), ContentType.Application.Json)
+                        }
+
+                        get("/api/instruments") {
+                            val config = ConfigManager.getConfig()
+                            val details = tradeProcessor.getInstrumentDetails()
+                            val allSymbols = config.exchanges.flatMap { x -> x.symbols.map { it.uppercase() } }
+                            val result = allSymbols.map { symbol ->
+                                val d = details[symbol] ?: emptyMap<String, Any>()
+                                mapOf(
+                                    "symbol" to symbol,
+                                    "totalTrades" to (d["totalTrades"] ?: 0),
+                                    "lastTradeTime" to (d["lastTradeTime"] ?: 0L),
+                                    "batchQueueSize" to (d["batchQueueSize"] ?: 0),
+                                    "volumeThreshold" to (d["volumeThreshold"] ?: 0),
+                                    "windowSize" to (d["windowSize"] ?: 0),
+                                    "processedTrades" to (d["processedTrades"] ?: 0)
+                                )
+                            }
+                            call.respondText(jmapper.writeValueAsString(result), ContentType.Application.Json)
+                        }
+
+                        get("/api/history/{symbol}") {
+                            val symbol = call.parameters["symbol"] ?: ""
+                            val minutes = call.request.queryParameters["minutes"]?.toIntOrNull() ?: 60
+                            if (symbol.isBlank()) {
+                                call.respondText(jmapper.writeValueAsString(mapOf("error" to "symbol required")), ContentType.Application.Json)
+                                return@get
+                            }
+                            val history = tradeDAO.getHistory(symbol, minutes)
+                            call.respondText(jmapper.writeValueAsString(history), ContentType.Application.Json)
+                        }
+
                         val staticDir = File("static")
                         if (staticDir.exists()) {
                             staticFiles("/", staticDir)
