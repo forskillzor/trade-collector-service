@@ -198,9 +198,6 @@ class BatchScheduler(
         try {
             val trades = getTradesInRange(symbol, start, end)
             if (trades.isNotEmpty()) {
-                buildAndSave1mAggregate(symbol, start, end, trades) // переименуем мысленно в 15m
-                // Сохраняем с timeframe="15m"
-                // Перезаписываем свечу с правильным timeframe
                 val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
                 var minPrice = BigDecimal.ZERO
                 var maxPrice = BigDecimal.ZERO
