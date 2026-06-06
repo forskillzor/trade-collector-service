@@ -109,6 +109,7 @@ class TradeDAO(
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_ts ON ${tableName("filtered_trades", symbol)} (timestamp DESC)")
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_vol ON ${tableName("filtered_trades", symbol)} (volume_usd DESC)")
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_cat ON ${tableName("filtered_trades", symbol)} (trade_category)")
+            stmt.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_uniq ON ${tableName("filtered_trades", symbol)} (timestamp, price, quantity, is_buy)")
 
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS ${tableName("volume_windows", symbol)} (
@@ -238,6 +239,7 @@ class TradeDAO(
                  volume_usd, percentile_threshold, volume_threshold, trade_category,
                  window_start_time, window_end_time, window_total_trades, batch_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (timestamp, price, quantity, is_buy) DO NOTHING
             """).use { stmt ->
                 filteredTrades.forEach { filteredTrade ->
                     val trade = filteredTrade.trade
