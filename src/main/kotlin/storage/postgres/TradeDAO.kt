@@ -299,6 +299,40 @@ class TradeDAO(
         }
     }
 
+    /** Load 1m aggregates for merging into higher timeframes */
+    fun get1mAggregates(symbol: String, start: Long, end: Long): List<AggregateCandle> {
+        ensureTables(symbol)
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT exchange, symbol, timeframe, start_time, end_time,
+                       price_levels_jsonb, total_ticks, min_price, max_price, price_levels
+                FROM ${tableName("aggregates", symbol)}
+                WHERE timeframe = '1m' AND start_time >= ? AND start_time < ?
+                ORDER BY start_time
+            """).use { stmt ->
+                stmt.setLong(1, start)
+                stmt.setLong(2, end)
+                val rs = stmt.executeQuery()
+                val results = mutableListOf<AggregateCandle>()
+                while (rs.next()) {
+                    results.add(AggregateCandle(
+                        exchange = rs.getString("exchange"),
+                        symbol = rs.getString("symbol"),
+                        timeframe = rs.getString("timeframe"),
+                        startTime = rs.getLong("start_time"),
+                        endTime = rs.getLong("end_time"),
+                        priceLevelsJson = rs.getString("price_levels_jsonb"),
+                        totalTicks = rs.getLong("total_ticks"),
+                        minPrice = rs.getBigDecimal("min_price"),
+                        maxPrice = rs.getBigDecimal("max_price"),
+                        priceLevels = rs.getInt("price_levels")
+                    ))
+                }
+                results
+            }
+        }
+    }
+
     // ========== VOLUME WINDOWS ==========
 
     fun saveVolumeWindow(window: VolumeWindow) {
@@ -343,6 +377,31 @@ class TradeDAO(
                 stmt.setDouble(15, window.filterPercentile)
                 stmt.setBigDecimal(16, window.filterThreshold)
                 stmt.execute()
+            }
+        }
+    }
+
+    /** Delete volume_windows and filtered_trades older than retentionMs */
+    fun cleanupOldDerivedData(symbol: String, retentionMs: Long = 86_400_000L) {
+        ensureTables(symbol)
+        val cutoff = System.currentTimeMillis() - retentionMs
+        dataSource.connection.use { conn ->
+            val stmt = conn.createStatement()
+
+            // Volume windows: keep last 24h
+            val vwDeleted = stmt.executeUpdate("""
+                DELETE FROM ${tableName("volume_windows", symbol)}
+                WHERE end_time < $cutoff
+            """)
+
+            // Filtered trades: keep last 24h
+            val ftDeleted = stmt.executeUpdate("""
+                DELETE FROM ${tableName("filtered_trades", symbol)}
+                WHERE timestamp < $cutoff
+            """)
+
+            if (vwDeleted > 0 || ftDeleted > 0) {
+                log.info { "Cleanup $symbol: $vwDeleted volume_windows, $ftDeleted filtered_trades" }
             }
         }
     }

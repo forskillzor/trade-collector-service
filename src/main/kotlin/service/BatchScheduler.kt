@@ -93,27 +93,34 @@ class BatchScheduler(
         if (wm <= 0) wm = currentMinute - 60_000
 
         // Догоняем пропущенные минуты (после рестарта или долгой паузы)
+        // Для промежуточных минут: только пустые агрегаты, без volume-статистики
         while (wm < currentMinute) {
             val start = wm
             val end = start + 60_000
+            val isLastMinute = (end >= currentMinute) // только последняя минута — полная обработка
 
             try {
                 val trades = getTradesInRange(symbol, start, end)
                 if (trades.isNotEmpty()) {
                     buildAndSave1mAggregate(symbol, start, end, trades)
+
+                    // Volume-статистику считаем только на последней минуте и только если были трейды
+                    if (isLastMinute) {
+                        val recentTrades = dao.getRecentRawTrades("Binance", symbol, 10_000)
+                        if (recentTrades.isNotEmpty()) {
+                            recalculateVolumeStats(symbol, recentTrades, start, end)
+                        }
+                    }
                 } else {
                     // Пустая свеча — сохраняем для непрерывности
                     saveEmptyAggregate(symbol, "1m", start, end)
                 }
 
-                // Пересчитываем volume-статистику из последних 10K сделок
-                val recentTrades = dao.getRecentRawTrades("Binance", symbol, 10_000)
-                if (recentTrades.isNotEmpty()) {
-                    recalculateVolumeStats(symbol, recentTrades, start, end)
+                // Чистим старые raw_trades и derived data только на последней минуте
+                if (isLastMinute) {
+                    dao.cleanupOldRawTrades(symbol, 10_000)
+                    dao.cleanupOldDerivedData(symbol, 86_400_000L)
                 }
-
-                // Чистим старые raw_trades
-                dao.cleanupOldRawTrades(symbol, 10_000)
 
             } catch (e: Exception) {
                 log.warn(e) { "Batch failed for $symbol ${formatTime(start)}" }
@@ -196,35 +203,66 @@ class BatchScheduler(
         val end = current15m
 
         try {
-            val trades = getTradesInRange(symbol, start, end)
-            if (trades.isNotEmpty()) {
-                val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
-                var minPrice = BigDecimal.ZERO
-                var maxPrice = BigDecimal.ZERO
-                trades.forEach { trade ->
-                    val p = trade.price; val q = trade.quantity
-                    if (priceLevels.isEmpty()) { minPrice = p; maxPrice = p }
-                    else { if (p < minPrice) minPrice = p; if (p > maxPrice) maxPrice = p }
-                    val level = priceLevels.getOrPut(p) { PriceLevelData(p) }
-                    if (trade.isBuy) { level.bidVolume = level.bidVolume.add(q); level.bidCount++ }
-                    else { level.askVolume = level.askVolume.add(q); level.askCount++ }
+            // Merge existing 1m aggregates instead of re-reading raw trades
+            val qmAggregates = dao.get1mAggregates(symbol, start, end)
+            if (qmAggregates.isEmpty()) return
+
+            val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
+            var minPrice = BigDecimal.ZERO
+            var maxPrice = BigDecimal.ZERO
+            var totalTicks = 0L
+            var first = true
+
+            for (agg in qmAggregates) {
+                val levels = parsePriceLevelsJson(agg.priceLevelsJson)
+                for (level in levels) {
+                    val existing = priceLevels.getOrPut(level.price) { PriceLevelData(level.price) }
+                    existing.bidVolume = existing.bidVolume.add(level.bidVolume)
+                    existing.askVolume = existing.askVolume.add(level.askVolume)
+                    existing.bidCount += level.bidCount
+                    existing.askCount += level.askCount
+
+                    if (first) { minPrice = level.price; maxPrice = level.price; first = false }
+                    else { if (level.price < minPrice) minPrice = level.price; if (level.price > maxPrice) maxPrice = level.price }
                 }
-                val json = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price })
-                val candle = AggregateCandle(
-                    exchange = "Binance", symbol = symbol, timeframe = "15m",
-                    startTime = start, endTime = end,
-                    priceLevelsJson = json,
-                    totalTicks = trades.size.toLong(),
-                    minPrice = minPrice, maxPrice = maxPrice,
-                    priceLevels = priceLevels.size
-                )
-                dao.saveAggregate(candle)
-                log.debug { "Batch aggregate $symbol 15m | ticks=${trades.size} levels=${priceLevels.size}" }
+                totalTicks += agg.totalTicks
             }
+
+            val json = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price })
+            val candle = AggregateCandle(
+                exchange = "Binance", symbol = symbol, timeframe = "15m",
+                startTime = start, endTime = end,
+                priceLevelsJson = json,
+                totalTicks = totalTicks,
+                minPrice = minPrice, maxPrice = maxPrice,
+                priceLevels = priceLevels.size
+            )
+            dao.saveAggregate(candle)
+            log.debug { "Batch aggregate $symbol 15m (merged from ${qmAggregates.size}x1m) | ticks=$totalTicks levels=${priceLevels.size}" }
             watermarks["${symbol}_15m"] = end
         } catch (e: Exception) {
             log.warn(e) { "Batch 15m failed for $symbol" }
         }
+    }
+
+    private fun parsePriceLevelsJson(json: String): List<PriceLevelData> {
+        if (json == "[]" || json.isBlank()) return emptyList()
+        return json.removeSurrounding("[", "]")
+            .split("],[")
+            .mapNotNull { block ->
+                val clean = block.trim('[', ']')
+                val parts = clean.split(",")
+                if (parts.size < 5) return@mapNotNull null
+                try {
+                    PriceLevelData(
+                        price = BigDecimal(parts[0]),
+                        bidVolume = BigDecimal(parts[1]),
+                        askVolume = BigDecimal(parts[2]),
+                        bidCount = parts[3].toInt(),
+                        askCount = parts[4].toInt()
+                    )
+                } catch (e: Exception) { null }
+            }
     }
 
     private fun recalculateVolumeStats(symbol: String, trades: List<Trade>, windowStart: Long, windowEnd: Long) {
