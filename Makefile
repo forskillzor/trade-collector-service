@@ -49,14 +49,13 @@ package: build   ## Собрать и упаковать архив для де�
 deploy: package  ## Собрать и задеплоить на VPS (нужны VPS_HOST, VPS_USER, VPS_SSH_KEY)
 	@test -n "$(VPS_HOST)" || (echo "❌ VPS_HOST not set" && exit 1)
 	@test -n "$(VPS_USER)" || (echo "❌ VPS_USER not set" && exit 1)
+	@test -f "trade-collector-$(VERSION).tar.gz" || (echo "❌ Archive not found: trade-collector-$(VERSION).tar.gz" && exit 1)
+	@test -n "$(DB_PASSWORD)" || (echo "❌ DB_PASSWORD not set (add to .env)" && exit 1)
 	scp -i $(VPS_SSH_KEY) -o StrictHostKeyChecking=no trade-collector-$(VERSION).tar.gz $(VPS_USER)@$(VPS_HOST):/tmp/
-	ssh -i $(VPS_SSH_KEY) -o StrictHostKeyChecking=no $(VPS_USER)@$(VPS_HOST) "
-		sudo systemctl stop trade-collector 2>/dev/null || true
-		rm -rf /opt/trade-collector/releases/*
-		cp /tmp/trade-collector-$(VERSION).tar.gz /tmp/
-		export DB_PASSWORD=$(DB_PASSWORD) DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_NAME=$(DB_NAME)
-		cd /opt/trade-collector && bash deploy-remote.sh $(VERSION)
-	"
+	ssh -i $(VPS_SSH_KEY) -o StrictHostKeyChecking=no $(VPS_USER)@$(VPS_HOST) \
+		"sudo systemctl stop trade-collector 2>/dev/null || true; \
+		 export DB_PASSWORD=$(DB_PASSWORD) DB_HOST=$(DB_HOST) DB_PORT=$(DB_PORT) DB_USER=$(DB_USER) DB_NAME=$(DB_NAME); \
+		 cd /opt/trade-collector && bash deploy-remote.sh $(VERSION)"
 
 # ===== БАЗА ДАННЫХ (локально) =====
 

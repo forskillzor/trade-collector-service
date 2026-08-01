@@ -44,7 +44,7 @@ fun main() = runBlocking {
             exitProcess(1)
         }
 
-        log.info { "TradeCollectorService v${BuildConfig.VERSION} | exchanges=${config.exchanges.size} | monitor=:${config.monitoring.httpPort} | db=${config.database.host}:${config.database.port}/${config.database.database} | filter=${config.processor.filterPercentile} | tfs=${config.processor.timeframes}" }
+        log.info { "TradeCollectorService v${BuildConfig.VERSION} | exchanges=${config.exchanges.size} | monitor=:${config.monitoring.httpPort} | db=${config.database.host}:${config.database.port}/${config.database.database} | whaleFilter=${config.processor.whalePercentile} | tfs=${config.processor.timeframes}" }
 
         // Инициализация БД
         log.info { "Connecting to PostgreSQL at ${config.database.host}:${config.database.port}/${config.database.database}..." }

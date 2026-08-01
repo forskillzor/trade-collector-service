@@ -1,0 +1,1893 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>specification.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> or <div class="page"></div> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="trade-collector-service--полная-техническая-спецификация">Trade Collector Service — Полная техническая спецификация</h1>
+<blockquote>
+<p><strong>Версия</strong>: 2.0.0<br>
+<strong>Статус</strong>: Production<br>
+<strong>Платформа</strong>: JVM 21, Kotlin 2.2.20, PostgreSQL 16<br>
+<strong>Ресурсы</strong>: 768 MB heap, 50 инструментов, ~500 TPS в пике</p>
+</blockquote>
+<hr>
+<h2 id="оглавление">Оглавление</h2>
+<ol>
+<li><a href="#1-%D0%BF%D1%80%D0%B5%D0%B4%D0%BD%D0%B0%D0%B7%D0%BD%D0%B0%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%B0">Предназначение сервиса</a></li>
+<li><a href="#2-%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%BD%D0%B0%D1%8F-%D1%81%D1%85%D0%B5%D0%BC%D0%B0">Архитектурная схема</a></li>
+<li><a href="#3-%D1%82%D0%BE%D1%87%D0%BA%D0%B0-%D0%B2%D1%85%D0%BE%D0%B4%D0%B0-%D0%B8-%D0%B6%D0%B8%D0%B7%D0%BD%D0%B5%D0%BD%D0%BD%D1%8B%D0%B9-%D1%86%D0%B8%D0%BA%D0%BB">Точка входа и жизненный цикл</a></li>
+<li><a href="#4-%D0%BA%D0%BE%D0%BD%D1%84%D0%B8%D0%B3%D1%83%D1%80%D0%B0%D1%86%D0%B8%D1%8F">Конфигурация</a></li>
+<li><a href="#5-exchange-adapters-%D0%B0%D0%B1%D1%81%D1%82%D1%80%D0%B0%D0%BA%D1%86%D0%B8%D1%8F-%D0%B1%D0%B8%D1%80%D0%B6">Exchange Adapters: абстракция бирж</a></li>
+<li><a href="#6-websocket-%D0%BA%D0%BB%D0%B8%D0%B5%D0%BD%D1%82-%D0%BC%D0%BD%D0%BE%D0%B3%D0%BE%D1%81%D0%BB%D0%BE%D0%B9%D0%BD%D0%B0%D1%8F-%D0%B7%D0%B0%D1%89%D0%B8%D1%82%D0%B0-%D1%81%D0%BE%D0%B5%D0%B4%D0%B8%D0%BD%D0%B5%D0%BD%D0%B8%D1%8F">WebSocket клиент: многослойная защита соединения</a></li>
+<li><a href="#7-trade-processor-%D0%B3%D0%BE%D1%80%D1%8F%D1%87%D0%B8%D0%B9-%D1%86%D0%B8%D0%BA%D0%BB">Trade Processor: горячий цикл</a></li>
+<li><a href="#8-batch-processor-%D0%B1%D1%83%D1%84%D0%B5%D1%80%D0%B8%D0%B7%D0%B0%D1%86%D0%B8%D1%8F-%D0%B8-%D1%83%D1%81%D1%82%D0%BE%D0%B9%D1%87%D0%B8%D0%B2%D0%BE%D1%81%D1%82%D1%8C-%D0%BA-%D0%BE%D1%82%D0%BA%D0%B0%D0%B7%D0%B0%D0%BC">Batch Processor: буферизация и устойчивость к отказам</a></li>
+<li><a href="#9-batch-scheduler-%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D1%82%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9-%D0%B4%D0%B2%D0%B8%D0%B6%D0%BE%D0%BA">Batch Scheduler: аналитический движок</a></li>
+<li><a href="#10-t-digest-%D1%81%D1%82%D0%B0%D1%82%D0%B8%D1%81%D1%82%D0%B8%D0%BA%D0%B0-%D0%B1%D0%B5%D0%B7-on-log-n">t-Digest: статистика без O(n log n)</a></li>
+<li><a href="#11-liquidation-pipeline">Liquidation Pipeline</a></li>
+<li><a href="#12-database-architecture">Database Architecture</a></li>
+<li><a href="#13-monitoring--observability">Monitoring &amp; Observability</a></li>
+<li><a href="#14-deployment--infrastructure">Deployment &amp; Infrastructure</a></li>
+<li><a href="#15-failure-modes--resilience">Failure Modes &amp; Resilience</a></li>
+<li><a href="#16-performance-characteristics">Performance Characteristics</a></li>
+<li><a href="#17-%D1%81%D0%BB%D0%BE%D0%B6%D0%BD%D0%BE%D1%81%D1%82%D1%8C-%D0%BC%D0%B8%D0%BA%D1%80%D0%BE%D1%81%D0%B5%D1%80%D0%B2%D0%B8%D1%81%D0%B0-%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D0%B7">Сложность микросервиса: анализ</a></li>
+<li><a href="#18-api-reference">API Reference</a></li>
+</ol>
+<hr>
+<h2 id="1-предназначение-сервиса">1. Предназначение сервиса</h2>
+<p>Trade Collector — это демон сбора, агрегации и статистического анализа криптовалютных сделок в реальном времени. Он подключается к WebSocket API криптобирж, реплицирует поток сделок в PostgreSQL, строит footprint-свечи (поминутные кластерные графики с bid/ask-распределением по ценовым уровням), вычисляет статистику объёмов и детектирует аномально крупные «китовые» сделки.</p>
+<p><strong>Сервис НЕ является</strong>: трейдинговым ботом, исполняющим ордера, или пользовательским приложением. Это инфраструктурный компонент — источник данных для downstream-систем (market-data-server, Nous Platform).</p>
+<h3 id="ключевые-метрики">Ключевые метрики</h3>
+<table>
+<thead>
+<tr>
+<th>Метрика</th>
+<th>Значение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Инструментов</td>
+<td>50 (Perpetual Futures Binance)</td>
+</tr>
+<tr>
+<td>WebSocket streams</td>
+<td>100 (50 aggTrade + 50 forceOrder)</td>
+</tr>
+<tr>
+<td>Трейдов в секунду</td>
+<td>200-700 (зависит от рынка)</td>
+</tr>
+<tr>
+<td>Всего трейдов обработано</td>
+<td>&gt;75 миллионов</td>
+</tr>
+<tr>
+<td>Задержка сделка→БД</td>
+<td>&lt; 500 мс (batch flush)</td>
+</tr>
+<tr>
+<td>Задержка сделка→агрегат</td>
+<td>+0-60 сек (ждём границу минуты)</td>
+</tr>
+<tr>
+<td>Размер БД</td>
+<td>~735 MB (25 000 свечей × 50 символов)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2-архитектурная-схема">2. Архитектурная схема</h2>
+<pre><code class="language-mermaid"><div class="mermaid">graph TB
+    subgraph External["Внешние системы"]
+        BINANCE["Binance Futures<br/>WebSocket API"]
+        DB[("PostgreSQL 16<br/>trade_collector")]
+    end
+
+    subgraph Service["Trade Collector Service"]
+        subgraph Ingestion["Слой приёма данных"]
+            EC["ExchangeClient<br/>Ktor WebSocket<br/>watchdog + ping-pong<br/>exponential backoff"]
+        end
+
+        subgraph HotPath["Горячий цикл"]
+            TP["TradeProcessor<br/>parse JSON → Trade<br/>TPS tracking"]
+            LP["LiquidationProcessor<br/>forceOrder → MinuteBuffer"]
+        end
+
+        subgraph Buffering["Буферизация"]
+            BP["BatchProcessor<br/>per-instrument queues<br/>CircuitBreaker<br/>DiskBuffer fallback"]
+            MB["MinuteBuffer<br/>liquidation buffer<br/>ConcurrentHashMap"]
+        end
+
+        subgraph Analytics["Аналитический слой"]
+            BS["BatchScheduler<br/>watermark recovery<br/>catch-up loop<br/>footprint aggregation<br/>t-Digest whale detection<br/>liquidation aggregation"]
+        end
+
+        subgraph Monitoring["Мониторинг"]
+            MS["MonitoringServer<br/>Ktor/Jetty :8080<br/>health/metrics/status<br/>dashboard HTML"]
+        end
+    end
+
+    BINANCE -->|"100 streams<br/>50×aggTrade + 50×forceOrder"| EC
+    EC -->|"Frame.Text"| TP
+    EC -->|"Frame.Text (forceOrder)"| LP
+    TP -->|"addTrade()"| BP
+    BP -->|"insertRawTradesBatch()"| DB
+    LP -->|"addLiquidation()"| MB
+    MB -->|"flush()"| BS
+    BS -->|"getTradesInRange()"| DB
+    BS -->|"saveAggregate()"| DB
+    BS -->|"saveVolumeWindow()"| DB
+    BS -->|"insertFilteredTradesBatch()"| DB
+    BS -->|"insertLiquidationsBatch()"| DB
+    BS -->|"saveLiquidationAggregate()"| DB
+    MS -->|"SELECT 1"| DB
+</div></code></pre>
+<hr>
+<h2 id="3-точка-входа-и-жизненный-цикл">3. Точка входа и жизненный цикл</h2>
+<h3 id="31-mainkt--загрузка">3.1 <code>Main.kt</code> — загрузка</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">main</span><span class="hljs-params">()</span></span> = runBlocking {
+    <span class="hljs-comment">// 1. Загрузка конфига из 7 возможных путей</span>
+    <span class="hljs-keyword">val</span> configLoaded = ConfigManager.loadFromEnv()
+
+    <span class="hljs-comment">// 2. Валидация: только PostgreSQL</span>
+    <span class="hljs-keyword">if</span> (config.database.type.lowercase() != <span class="hljs-string">&quot;postgresql&quot;</span>) exitProcess(<span class="hljs-number">1</span>)
+
+    <span class="hljs-comment">// 3. Создание HikariCP пула (15 соединений)</span>
+    <span class="hljs-keyword">val</span> hikariDataSource = TradeDAO.createDataSource(config.database)
+    <span class="hljs-keyword">val</span> dao = TradeDAO(hikariDataSource)
+
+    <span class="hljs-comment">// 4. Оркестратор</span>
+    <span class="hljs-keyword">val</span> service = TradeCollectorService(dao, config)
+
+    <span class="hljs-comment">// 5. Graceful shutdown</span>
+    Runtime.getRuntime().addShutdownHook(Thread {
+        runBlocking {
+            ShutdownChain()
+                .step(<span class="hljs-string">&quot;Service&quot;</span>, <span class="hljs-number">60_000</span>) { service.stop() }
+                .step(<span class="hljs-string">&quot;DAO&quot;</span>, <span class="hljs-number">15_000</span>) { dao.shutdown() }
+                .execute()
+        }
+    })
+
+    <span class="hljs-comment">// 6. Запуск + бесконечное ожидание</span>
+    service.start()
+    <span class="hljs-keyword">while</span> (service.isRunning()) delay(<span class="hljs-number">1000</span>)
+}
+</div></code></pre>
+<h3 id="32-tradecollectorservicestart--порядок-инициализации">3.2 <code>TradeCollectorService.start()</code> — порядок инициализации</h3>
+<pre><code class="language-mermaid"><div class="mermaid">sequenceDiagram
+    participant Main
+    participant Service as TradeCollectorService
+    participant MB as MinuteBuffer
+    participant LP as LiquidationProcessor
+    participant TP as TradeProcessor
+    participant BP as BatchProcessor
+    participant EC as ExchangeClient
+    participant BS as BatchScheduler
+    participant MS as MonitoringServer
+    participant DB as PostgreSQL
+
+    Main->>Service: start()
+    Service->>MB: new MinuteBuffer()
+    Service->>LP: new LiquidationProcessor(MB)
+    Service->>TP: new TradeProcessor(dao, config, diskBuf, dlq)
+    Service->>TP: initialize(scope)
+    TP->>BP: new BatchProcessor(dao, batchSize, flushMs, diskBuf)
+    BP->>BP: start() — processBatchLoop + diskBuf.replay
+    Service->>EC: new ExchangeClient(exchange, TP, LP)
+    Service->>EC: start()
+    EC->>EC: launchCombinedStream() / launchClientForSymbol()
+    EC->>EC: connectAndListenCombined() ← WebSocket loop
+    Service->>BS: new BatchScheduler(MB, dao, symbols, config)
+    BS->>DB: getWatermark() × 50 symbols
+    BS->>BS: start() — tick() every 1s
+    Service->>MS: new MonitoringServer(port, TP, dao, clients)
+    MS->>MS: start() — embeddedServer(Jetty, :8080)
+    Service->>Service: logStatus() every 10s
+</div></code></pre>
+<h3 id="33-shutdownchain--последовательная-остановка">3.3 <code>ShutdownChain</code> — последовательная остановка</h3>
+<pre class="hljs"><code><div>Step 1: BatchScheduler (timeout 30s)
+  → scheduler.stop() — отменяет tick() корутину
+Step 2: TradeProcessor (timeout 30s)
+  → processor.shutdown() — останавливает BatchProcessor
+Step 3: ExchangeClients (timeout 15s)
+  → client.stop() для каждого — закрывает WebSocket, отменяет scope
+Step 4: MonitoringServer (timeout 5s)
+  → server.stop() — останавливает Jetty
+</div></code></pre>
+<p>Каждый шаг имеет таймаут. Таймаут или исключение в одном шаге не блокирует следующие.</p>
+<hr>
+<h2 id="4-конфигурация">4. Конфигурация</h2>
+<h3 id="41-иерархия">4.1 Иерархия</h3>
+<pre class="hljs"><code><div>config.json / config/config.prod.json (JSON на диске)
+    └── переменные окружения (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)
+        └── Консольный аргумент CONFIG_PATH (опционально)
+</div></code></pre>
+<h3 id="42-appconfig--структура">4.2 <code>AppConfig</code> — структура</h3>
+<pre class="hljs"><code><div><span class="hljs-meta">@Serializable</span>
+<span class="hljs-keyword">data</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">AppConfig</span>(
+    <span class="hljs-keyword">val</span> exchanges: List&lt;ExchangeConfig&gt;,      <span class="hljs-comment">// биржи и их символы</span>
+    <span class="hljs-keyword">val</span> database: DatabaseConfig,             <span class="hljs-comment">// PostgreSQL</span>
+    <span class="hljs-keyword">val</span> processor: ProcessorConfig,           <span class="hljs-comment">// батчинг + фильтры</span>
+    <span class="hljs-keyword">val</span> export: ExportConfig,                 <span class="hljs-comment">// экспорт данных</span>
+    <span class="hljs-keyword">val</span> monitoring: MonitoringConfig           <span class="hljs-comment">// HTTP-сервер</span>
+)
+</div></code></pre>
+<h3 id="43-exchangeconfig">4.3 <code>ExchangeConfig</code></h3>
+<pre class="hljs"><code><div><span class="hljs-meta">@Serializable</span>
+<span class="hljs-keyword">data</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ExchangeConfig</span>(
+    <span class="hljs-keyword">val</span> name: String,                          <span class="hljs-comment">// &quot;Binance&quot;</span>
+    <span class="hljs-keyword">val</span> symbols: List&lt;String&gt;,                 <span class="hljs-comment">// 50 инструментов</span>
+    <span class="hljs-keyword">val</span> enabled: <span class="hljs-built_in">Boolean</span> = <span class="hljs-literal">true</span>,               <span class="hljs-comment">// вкл/выкл</span>
+    <span class="hljs-keyword">val</span> collectLiquidations: <span class="hljs-built_in">Boolean</span> = <span class="hljs-literal">false</span>   <span class="hljs-comment">// сбор forceOrder</span>
+)
+</div></code></pre>
+<h3 id="44-databaseconfig">4.4 <code>DatabaseConfig</code></h3>
+<pre class="hljs"><code><div><span class="hljs-meta">@Serializable</span>
+<span class="hljs-keyword">data</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">DatabaseConfig</span>(
+    <span class="hljs-keyword">val</span> type: String = <span class="hljs-string">&quot;postgresql&quot;</span>,
+    <span class="hljs-keyword">val</span> host: String,         port: <span class="hljs-built_in">Int</span>,         database: String,
+    <span class="hljs-keyword">val</span> username: String,     password: String?,
+    <span class="hljs-keyword">val</span> batchSize: <span class="hljs-built_in">Int</span> = <span class="hljs-number">1000</span>,
+    <span class="hljs-keyword">val</span> flushIntervalMs: <span class="hljs-built_in">Long</span> = <span class="hljs-number">1000</span>
+) {
+    <span class="hljs-comment">// Все поля имеют resolved*-версии, которые сначала проверяют System.getenv()</span>
+    <span class="hljs-keyword">val</span> resolvedHost = System.getenv(<span class="hljs-string">&quot;DB_HOST&quot;</span>) ?: host
+    <span class="hljs-keyword">val</span> resolvedPort = System.getenv(<span class="hljs-string">&quot;DB_PORT&quot;</span>)?.toIntOrNull() ?: port
+    <span class="hljs-comment">// ...</span>
+    <span class="hljs-keyword">val</span> resolvedPassword: String
+        <span class="hljs-keyword">get</span>() = System.getenv(<span class="hljs-string">&quot;DB_PASSWORD&quot;</span>) ?: password
+            ?: <span class="hljs-keyword">throw</span> IllegalStateException(<span class="hljs-string">&quot;DB_PASSWORD not configured!&quot;</span>)
+}
+</div></code></pre>
+<h3 id="45-processorconfig">4.5 <code>ProcessorConfig</code></h3>
+<pre class="hljs"><code><div><span class="hljs-meta">@Serializable</span>
+<span class="hljs-keyword">data</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">ProcessorConfig</span>(
+    <span class="hljs-keyword">val</span> batchSize: <span class="hljs-built_in">Int</span> = <span class="hljs-number">5000</span>,              <span class="hljs-comment">// размер батча raw_trades</span>
+    <span class="hljs-keyword">val</span> flushIntervalMs: <span class="hljs-built_in">Long</span> = <span class="hljs-number">500</span>,        <span class="hljs-comment">// интервал сброса очереди</span>
+    <span class="hljs-keyword">val</span> whaleWindowSize: <span class="hljs-built_in">Int</span> = <span class="hljs-number">10000</span>,       <span class="hljs-comment">// окно для детекции китов</span>
+    <span class="hljs-keyword">val</span> whalePercentile: <span class="hljs-built_in">Double</span> = <span class="hljs-number">0.98</span>,     <span class="hljs-comment">// порог перцентиля</span>
+    <span class="hljs-keyword">val</span> timeframes: List&lt;String&gt; = listOf(<span class="hljs-string">&quot;1m&quot;</span>, <span class="hljs-string">&quot;15m&quot;</span>)
+)
+</div></code></pre>
+<h3 id="46-configmanager">4.6 <code>ConfigManager</code></h3>
+<ul>
+<li>Ищет файл конфигурации в <strong>7 возможных путях</strong>: <code>config.json</code>, <code>../config.json</code>, <code>../../config.json</code>, <code>src/main/resources/config.json</code>, <code>$user.dir/config.json</code>, <code>config/config.prod.json</code>, <code>$user.dir/config/config.prod.json</code></li>
+<li>Парсит JSON через <code>kotlinx.serialization</code> с <code>ignoreUnknownKeys = true</code> и <code>coerceInputValues = true</code></li>
+<li>Имеет <code>loadFromEnv()</code> — читает <code>CONFIG_PATH</code> из переменных окружения</li>
+</ul>
+<hr>
+<h2 id="5-exchange-adapters-абстракция-бирж">5. Exchange Adapters: абстракция бирж</h2>
+<h3 id="51-иерархия">5.1 Иерархия</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">interface</span> <span class="hljs-title class_">ExchangeAdapter</span> {
+    <span class="hljs-keyword">val</span> name: String
+    
+    <span class="hljs-comment">// Single-symbol stream</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getWebSocketUrl</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>)</span></span>: String
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getSubscribeMessage</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>)</span></span>: String?
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">parseTrade</span><span class="hljs-params">(json: <span class="hljs-type">String</span>, symbol: <span class="hljs-type">String</span>)</span></span>: Trade?
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">isTradeMessage</span><span class="hljs-params">(json: <span class="hljs-type">String</span>)</span></span>: <span class="hljs-built_in">Boolean</span>
+    
+    <span class="hljs-comment">// Combined stream (multiple symbols in one WS connection)</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">supportsCombinedStream</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getCombinedStreamUrl</span><span class="hljs-params">(symbols: <span class="hljs-type">List</span>&lt;<span class="hljs-type">String</span>&gt;)</span></span>: String
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">parseCombinedFrame</span><span class="hljs-params">(json: <span class="hljs-type">String</span>)</span></span>: Pair&lt;String, JsonNode&gt;?
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">isTradeMessageNode</span><span class="hljs-params">(node: <span class="hljs-type">JsonNode</span>)</span></span>: <span class="hljs-built_in">Boolean</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">parseTradeNode</span><span class="hljs-params">(node: <span class="hljs-type">JsonNode</span>, symbol: <span class="hljs-type">String</span>)</span></span>: Trade?
+    
+    <span class="hljs-comment">// Liquidation support</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getLiquidationStreamSuffix</span><span class="hljs-params">()</span></span>: String
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getCombinedStreamUrlWithLiq</span><span class="hljs-params">(symbols: <span class="hljs-type">List</span>&lt;<span class="hljs-type">String</span>&gt;, includeLiquidations: <span class="hljs-type">Boolean</span>)</span></span>: String
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">isLiquidationMessageNode</span><span class="hljs-params">(node: <span class="hljs-type">JsonNode</span>)</span></span>: <span class="hljs-built_in">Boolean</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">parseLiquidationNode</span><span class="hljs-params">(node: <span class="hljs-type">JsonNode</span>, symbol: <span class="hljs-type">String</span>)</span></span>: LiquidationOrder?
+}
+</div></code></pre>
+<h3 id="52-binanceadapter">5.2 <code>BinanceAdapter</code></h3>
+<p><strong>Combined stream URL pattern:</strong></p>
+<pre class="hljs"><code><div>wss://fstream.binance.com/market/stream?streams=
+  btcusdt@aggTrade/btcusdt@forceOrder/
+  ethusdt@aggTrade/ethusdt@forceOrder/
+  ...50 пар...
+</div></code></pre>
+<p>Важные детали реализации:</p>
+<ul>
+<li>Используется <strong>futures</strong> endpoint (<code>fstream.binance.com</code>), а не spot</li>
+<li><code>isBuy = !node[&quot;m&quot;].asBoolean()</code> — поле <code>m</code> в Binance означает &quot;является ли покупатель мейкером&quot;, поэтому инвертировано</li>
+<li>Ликвидации: <code>isLong = (side == &quot;SELL&quot;)</code> — SELL-ликвидация означает закрытие длинной позиции</li>
+<li>Цена ликвидации берётся из <code>ap</code> (averagePrice), fallback на <code>p</code> (order price)</li>
+</ul>
+<h3 id="53-bybitadapter">5.3 <code>BybitAdapter</code></h3>
+<ul>
+<li><strong>Не поддерживает combined stream</strong> — по одному WebSocket на символ</li>
+<li>Использует <strong>spot</strong> WebSocket (<code>wss://stream.bybit.com/v5/public/spot</code>)</li>
+<li>Требует отправки subscribe-сообщения после подключения</li>
+<li>Не поддерживает ликвидации</li>
+</ul>
+<h3 id="54-exchangeadapterfactory">5.4 <code>ExchangeAdapterFactory</code></h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">object</span> ExchangeAdapterFactory {
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">createAdapter</span><span class="hljs-params">(exchange: <span class="hljs-type">String</span>)</span></span>: ExchangeAdapter = <span class="hljs-keyword">when</span> (exchange.lowercase()) {
+        <span class="hljs-string">&quot;binance&quot;</span> -&gt; BinanceAdapter()
+        <span class="hljs-string">&quot;bybit&quot;</span> -&gt; BybitAdapter()
+        <span class="hljs-keyword">else</span> -&gt; <span class="hljs-keyword">throw</span> IllegalArgumentException(<span class="hljs-string">&quot;Unknown exchange: <span class="hljs-variable">$exchange</span>&quot;</span>)
+    }
+}
+</div></code></pre>
+<hr>
+<h2 id="6-websocket-клиент-многослойная-защита-соединения">6. WebSocket клиент: многослойная защита соединения</h2>
+<h3 id="61-уровни-защиты">6.1 Уровни защиты</h3>
+<pre><code class="language-mermaid"><div class="mermaid">graph TB
+    subgraph L1["Уровень 1: Ktor pingInterval = 30s"]
+        PING["Каждые 30s Ktor отправляет<br/>WebSocket Ping-фрейм"]
+        PONG["Ожидает Pong-фрейм"]
+        NO_PONG["Нет Pong → Ktor<br/>выбрасывает исключение"]
+        NO_PONG --> RECONNECT["catch → while(true) reconnect"]
+    end
+
+    subgraph L2["Уровень 2: Application watchdog"]
+        WATCH["Корутина, каждые 10s проверяет<br/>lastFrameTime"]
+        STALE["lastFrameTime > 120s (combined)<br/>или > 60s (per-symbol)"]
+        STALE --> CANCEL["this@webSocket.cancel()<br/>→ CancellationException"]
+        CANCEL --> RECONNECT
+    end
+
+    subgraph L3["Уровень 3: Exponential backoff"]
+        ATTEMPT1["Попытка 1: 1s задержка"]
+        ATTEMPT2["Попытка 2: 2s"]
+        ATTEMPT3["Попытка 3: 4s"]
+        ATTEMPT4["Попытка 4: 8s"]
+        ATTEMPT5["Попытка 5: 16s"]
+        ATTEMPT6["Попытка 6+: 30s (cap)"]
+        RECONNECT --> ATTEMPT1
+    end
+
+    PING --> PONG
+    PONG --> PING
+</div></code></pre>
+<h3 id="62-почему-три-уровня">6.2 Почему три уровня</h3>
+<p><strong>Ktor ping (уровень 1)</strong>: обрабатывает «чистые» разрывы TCP — когда соединение закрывается на уровне сокета и Ktor получает IOException. Покрывает ~80% случаев.</p>
+<p><strong>Watchdog (уровень 2)</strong>: обрабатывает «грязные» разрывы — когда TCP-соединение остаётся открытым (keepalive работает), но данные перестают поступать. Типичный сценарий: Binance закрывает стрим на своей стороне без отправки Close-фрейма. Без watchdog приложение висело бы бесконечно (что и происходило в v2.0 — инцидент от 2026-06-16, 1.5 часа простоя).</p>
+<p><strong>Exponential backoff (уровень 3)</strong>: предотвращает DDoS на Binance при массовом переподключении (50 символов × экспоненциальная задержка).</p>
+<h3 id="63-combined-stream--оптимизация-соединений">6.3 Combined stream — оптимизация соединений</h3>
+<p>Вместо 100 отдельных WebSocket-соединений (50 aggTrade + 50 forceOrder) используется <strong>одно</strong> combined-соединение через Binance multistream endpoint:</p>
+<pre class="hljs"><code><div>Одно TCP-соединение → 100 логических потоков
+</div></code></pre>
+<p>Это снижает нагрузку на сеть и упрощает управление соединениями.</p>
+<h3 id="64-connectandlistencombined--полный-код">6.4 <code>connectAndListenCombined()</code> — полный код</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-keyword">suspend</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">connectAndListenCombined</span><span class="hljs-params">(url: <span class="hljs-type">String</span>, client: <span class="hljs-type">HttpClient</span>)</span></span> {
+    <span class="hljs-keyword">var</span> reconnectAttempts = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">val</span> maxReconnectDelay = <span class="hljs-number">30000L</span>
+    <span class="hljs-keyword">val</span> silenceTimeoutMs = <span class="hljs-number">120_000L</span>          <span class="hljs-comment">// 2 минуты для combined stream</span>
+    <span class="hljs-keyword">var</span> frameCount = <span class="hljs-number">0</span>
+
+    <span class="hljs-keyword">while</span> (<span class="hljs-literal">true</span>) {                            <span class="hljs-comment">// Бесконечный цикл переподключения</span>
+        <span class="hljs-keyword">try</span> {
+            reconnectAttempts++
+            log.info { <span class="hljs-string">&quot;combine connect attempt #<span class="hljs-variable">$reconnectAttempts</span>&quot;</span> }
+
+            client.webSocket(url) {           <span class="hljs-comment">// Ktor WebSocket сессия</span>
+                reconnectAttempts = <span class="hljs-number">0</span>          <span class="hljs-comment">// Сброс при успешном подключении</span>
+                frameCount = <span class="hljs-number">0</span>
+
+                <span class="hljs-keyword">var</span> lastFrameTime = System.currentTimeMillis()
+
+                <span class="hljs-comment">// === WATCHDOG ===</span>
+                <span class="hljs-keyword">val</span> watchdog = launch {
+                    <span class="hljs-keyword">while</span> (isActive) {
+                        delay(<span class="hljs-number">10_000</span>)          <span class="hljs-comment">// Проверка каждые 10 секунд</span>
+                        <span class="hljs-keyword">if</span> (System.currentTimeMillis() - lastFrameTime &gt; silenceTimeoutMs) {
+                            log.warn { <span class="hljs-string">&quot;Combined: NO frames for <span class="hljs-subst">${silenceTimeoutMs/<span class="hljs-number">1000</span>}</span>s&quot;</span> }
+                            <span class="hljs-keyword">this</span><span class="hljs-symbol">@webSocket</span>.cancel(<span class="hljs-string">&quot;Combined stream silence timeout&quot;</span>)
+                        }
+                    }
+                }
+
+                <span class="hljs-comment">// === FRAME LOOP ===</span>
+                <span class="hljs-keyword">for</span> (frame <span class="hljs-keyword">in</span> incoming) {
+                    lastFrameTime = System.currentTimeMillis()  <span class="hljs-comment">// Обновление на ЛЮБОЙ фрейм</span>
+
+                    <span class="hljs-keyword">when</span> (frame) {
+                        <span class="hljs-keyword">is</span> Frame.Text -&gt; {
+                            frameCount++
+                            <span class="hljs-keyword">val</span> text = frame.readText()
+                            <span class="hljs-keyword">val</span> parsed = adapter.parseCombinedFrame(text) ?: <span class="hljs-keyword">continue</span>
+                            <span class="hljs-keyword">val</span> (symbol, node) = parsed
+
+                            <span class="hljs-keyword">when</span> {
+                                adapter.isLiquidationMessageNode(node) -&gt; {
+                                    liquidationProcessor?.process(
+                                        adapter.parseLiquidationNode(node, symbol)
+                                    )
+                                }
+                                adapter.isTradeMessageNode(node) -&gt; {
+                                    processor.process(node.toString(), config.name, symbol)
+                                }
+                            }
+                        }
+                        <span class="hljs-keyword">is</span> Frame.Close -&gt; {
+                            log.info { <span class="hljs-string">&quot;combined connection closed (<span class="hljs-subst">${frame.readReason()?.message}</span>)&quot;</span> }
+                            <span class="hljs-keyword">break</span>  <span class="hljs-comment">// Выход из for — переход к catch/reconnect</span>
+                        }
+                        <span class="hljs-keyword">else</span> -&gt; {}  <span class="hljs-comment">// Ping/Pong обрабатываются Ktor автоматически</span>
+                    }
+                }
+                watchdog.cancel()              <span class="hljs-comment">// Чистая остановка watchdog</span>
+            }
+        } <span class="hljs-keyword">catch</span> (e: Exception) {
+            <span class="hljs-keyword">val</span> delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
+            log.warn { <span class="hljs-string">&quot;combined error (<span class="hljs-subst">${e.message}</span>), reconnecting in <span class="hljs-subst">${delayMs/<span class="hljs-number">1000</span>}</span>s&quot;</span> }
+            delay(delayMs)
+        }
+    }
+}
+</div></code></pre>
+<h3 id="65-per-symbol-watchdog-60-секунд">6.5 Per-symbol watchdog (60 секунд)</h3>
+<p>Per-symbol вариант идентичен combined, но с таймаутом 60 секунд вместо 120. Дополнительно:</p>
+<ul>
+<li>Отправляет subscribe-сообщение после подключения</li>
+<li>Обновляет <code>lastTradeTime</code> на <strong>все</strong> типы фреймов (Ping, Pong, Text) — чтобы watchdog не считал пинги за тишину</li>
+</ul>
+<hr>
+<h2 id="7-trade-processor-горячий-цикл">7. Trade Processor: горячий цикл</h2>
+<h3 id="71-tradeprocessorprocess--на-каждый-трейд">7.1 <code>TradeProcessor.process()</code> — на каждый трейд</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">process</span><span class="hljs-params">(json: <span class="hljs-type">String</span>, exchange: <span class="hljs-type">String</span>, symbol: <span class="hljs-type">String</span>)</span></span> {
+    <span class="hljs-keyword">val</span> adapter = getAdapter(exchange)              <span class="hljs-comment">// кешируется</span>
+    <span class="hljs-keyword">val</span> trade = adapter.parseTrade(json, symbol)    <span class="hljs-comment">// Jackson парсинг</span>
+    
+    <span class="hljs-keyword">if</span> (trade != <span class="hljs-literal">null</span>) {
+        totalTrades++                                <span class="hljs-comment">// счётчик</span>
+        updateTps()                                  <span class="hljs-comment">// TPS за последнюю секунду</span>
+        
+        <span class="hljs-keyword">val</span> stats = instrumentStats.getOrPut(trade.key) { InstrumentStats() }
+        stats.totalTrades.incrementAndGet()           <span class="hljs-comment">// per-symbol статистика</span>
+        stats.lastTradeTime.<span class="hljs-keyword">set</span>(System.currentTimeMillis())
+        
+        batchProcessor.addTrade(trade)               <span class="hljs-comment">// → очередь батчинга</span>
+        stats.batchQueueSize.<span class="hljs-keyword">set</span>(batchProcessor.getQueueSize(trade.key))
+        
+        <span class="hljs-keyword">if</span> (totalTrades % <span class="hljs-number">1000</span> == <span class="hljs-number">0L</span>) {
+            log.debug { <span class="hljs-string">&quot;tick #<span class="hljs-variable">$totalTrades</span> | tps=<span class="hljs-variable">$tps</span>&quot;</span> }  <span class="hljs-comment">// лог каждые 1000</span>
+        }
+    }
+}
+</div></code></pre>
+<h3 id="72-tps-tracking">7.2 TPS tracking</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">updateTps</span><span class="hljs-params">()</span></span> {
+    <span class="hljs-keyword">val</span> currentSecond = System.currentTimeMillis() / <span class="hljs-number">1000</span>
+    <span class="hljs-keyword">if</span> (currentSecond != lastSecond) {
+        tradesPerSecond = (totalTrades - lastTotalTrades).toInt()
+        lastTotalTrades = totalTrades
+        lastSecond = currentSecond
+    }
+}
+</div></code></pre>
+<p>Сравнивает <code>totalTrades</code> на границах секунд. <code>tradesPerSecond</code> — это количество трейдов за предыдущую полную секунду.</p>
+<h3 id="73-adapter-caching">7.3 Adapter caching</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">getAdapter</span><span class="hljs-params">(exchange: <span class="hljs-type">String</span>)</span></span>: ExchangeAdapter {
+    <span class="hljs-keyword">return</span> adapterCache.getOrPut(exchange) {
+        ExchangeAdapterFactory.createAdapter(exchange)
+    }
+}
+</div></code></pre>
+<p>ExchangeAdapter не имеет состояния — один экземпляр используется для всех трейдов данной биржи.</p>
+<hr>
+<h2 id="8-batch-processor-буферизация-и-устойчивость-к-отказам">8. Batch Processor: буферизация и устойчивость к отказам</h2>
+<h3 id="81-архитектура-очередей">8.1 Архитектура очередей</h3>
+<pre><code class="language-mermaid"><div class="mermaid">graph LR
+    TP["TradeProcessor<br/>700 TPS"] -->|"addTrade()"| Q1["Queue: Binance_BTCUSDT<br/>ConcurrentLinkedQueue"]
+    TP -->|"addTrade()"| Q2["Queue: Binance_ETHUSDT<br/>ConcurrentLinkedQueue"]
+    TP -->|"addTrade()"| Q3["Queue: Binance_SOLUSDT<br/>ConcurrentLinkedQueue"]
+    
+    Q1 -->|"size >= 5000"| FLUSH["flushBatch(key)<br/>@Synchronized per-key"]
+    Q2 -->|"500ms timer"| FLUSH
+    Q3 -->|"500ms timer"| FLUSH
+    
+    FLUSH -->|"CircuitBreaker CLOSED"| DB["dao.insertRawTradesBatch()"]
+    FLUSH -->|"CircuitBreaker OPEN"| DISK["diskBuffer.saveBatch()"]
+</div></code></pre>
+<h3 id="82-два-триггера-сброса">8.2 Два триггера сброса</h3>
+<table>
+<thead>
+<tr>
+<th>Триггер</th>
+<th>Условие</th>
+<th>Цель</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Размер очереди</strong></td>
+<td><code>queue.size &gt;= batchSize (5000)</code></td>
+<td>Немедленный сброс при высокой нагрузке</td>
+</tr>
+<tr>
+<td><strong>Таймер</strong></td>
+<td>Каждые <code>flushIntervalMs (500)</code></td>
+<td>Регулярный сброс для низконагруженных символов</td>
+</tr>
+</tbody>
+</table>
+<h3 id="83-circuit-breaker">8.3 Circuit Breaker</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">CircuitBreaker</span>(
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> failureThreshold: <span class="hljs-built_in">Int</span> = <span class="hljs-number">3</span>,          <span class="hljs-comment">// ошибок для открытия</span>
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> resetTimeoutMs: <span class="hljs-built_in">Long</span> = <span class="hljs-number">30_000</span>       <span class="hljs-comment">// таймаут сброса</span>
+) {
+    <span class="hljs-keyword">enum</span> <span class="hljs-keyword">class</span> <span class="hljs-title class_">State</span> { CLOSED, OPEN, HALF_OPEN }
+
+    <span class="hljs-comment">// CLOSED: разрешает вызовы</span>
+    <span class="hljs-comment">// → 3 ошибки подряд → OPEN</span>
+    <span class="hljs-comment">// OPEN: блокирует вызовы на 30 секунд</span>
+    <span class="hljs-comment">// → таймаут → HALF_OPEN</span>
+    <span class="hljs-comment">// HALF_OPEN: разрешает один пробный вызов</span>
+    <span class="hljs-comment">// → успех → CLOSED | ошибка → OPEN</span>
+}
+</div></code></pre>
+<p><strong>Срабатывание</strong>: 3 последовательные ошибки <code>insertRawTradesBatch()</code> (DB недоступна) → CircuitBreaker открывается. Все последующие трейды пишутся в <code>DiskBuffer</code> (JSONL-файл на диске).</p>
+<p><strong>Восстановление</strong>: через 30 секунд пропускается один пробный вызов. Успех → CLOSED, все последующие трейды снова идут в БД. Ошибка → OPEN ещё на 30 секунд.</p>
+<h3 id="84-diskbuffer--fallback-на-диск">8.4 <code>DiskBuffer</code> — fallback на диск</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">DiskBuffer</span>(dataDir: String) {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> bufferFile = File(dataDir, <span class="hljs-string">&quot;disk_buffer.jsonl&quot;</span>)
+    
+    <span class="hljs-meta">@Synchronized</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">saveBatch</span><span class="hljs-params">(trades: <span class="hljs-type">List</span>&lt;<span class="hljs-type">Trade</span>&gt;)</span></span> {
+        bufferFile.appendText(trades.joinToString(<span class="hljs-string">&quot;\n&quot;</span>) { it.toJson() } + <span class="hljs-string">&quot;\n&quot;</span>)
+    }
+    
+    <span class="hljs-meta">@Synchronized</span>
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">replayTo</span><span class="hljs-params">(dao: <span class="hljs-type">TradeDAO</span>)</span></span> {
+        <span class="hljs-keyword">if</span> (!bufferFile.exists()) <span class="hljs-keyword">return</span>
+        <span class="hljs-keyword">val</span> trades = bufferFile.readLines().mapNotNull { Trade.fromJson(it) }
+        dao.insertRawTradesBatch(trades)
+        bufferFile.delete()
+    }
+    
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">hasPending</span><span class="hljs-params">()</span></span>: <span class="hljs-built_in">Boolean</span> = bufferFile.exists() &amp;&amp; bufferFile.length() &gt; <span class="hljs-number">0</span>
+}
+</div></code></pre>
+<p>При старте сервиса <code>DiskBuffer.replayTo()</code> восстанавливает трейды, записанные во время сбоя БД.</p>
+<h3 id="85-per-key-синхронизация">8.5 Per-key синхронизация</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">flushBatch</span><span class="hljs-params">(key: <span class="hljs-type">String</span>)</span></span> {
+    <span class="hljs-keyword">val</span> lock = flushLocks.getOrPut(key) { Any() }
+    synchronized(lock) {
+        <span class="hljs-keyword">val</span> queue = tradeQueues[key] ?: <span class="hljs-keyword">return</span>
+        <span class="hljs-keyword">val</span> batch = mutableListOf&lt;Trade&gt;()
+        <span class="hljs-keyword">while</span> (batch.size &lt; batchSize &amp;&amp; queue.isNotEmpty()) {
+            batch.add(queue.poll())
+        }
+        <span class="hljs-comment">// ... вставка в БД</span>
+    }
+}
+</div></code></pre>
+<p>Каждый инструмент имеет <strong>свой lock-объект</strong>. Блокировка ETHUSDT не мешает BTCUSDT. Это предотвращает head-of-line blocking между инструментами.</p>
+<hr>
+<h2 id="9-batch-scheduler-аналитический-движок">9. Batch Scheduler: аналитический движок</h2>
+<h3 id="91-watermark-recovery">9.1 Watermark Recovery</h3>
+<p>При старте сервиса BatchScheduler <strong>восстанавливает состояние</strong> из существующих агрегатов:</p>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">start</span><span class="hljs-params">(scope: <span class="hljs-type">CoroutineScope</span>)</span></span> {
+    symbols.forEach { symbol -&gt;
+        listOf(<span class="hljs-string">&quot;1m&quot;</span>, <span class="hljs-string">&quot;15m&quot;</span>).forEach { tf -&gt;
+            <span class="hljs-keyword">val</span> wm = getWatermark(symbol, tf)  <span class="hljs-comment">// SELECT MAX(end_time) FROM aggregates_{symbol}</span>
+            watermarks[<span class="hljs-string">&quot;<span class="hljs-subst">${symbol}</span>_<span class="hljs-variable">$tf</span>&quot;</span>] = wm
+        }
+    }
+    <span class="hljs-comment">// Запуск tick() каждую секунду</span>
+}
+</div></code></pre>
+<p>Это позволяет сервису пережить рестарт без потери данных — он продолжит с той минуты, на которой остановился.</p>
+<h3 id="92-catch-up-loop">9.2 Catch-up Loop</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">processSymbol</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>, currentMinute: <span class="hljs-type">Long</span>)</span></span> {
+    <span class="hljs-keyword">var</span> wm = watermarks[<span class="hljs-string">&quot;<span class="hljs-subst">${symbol}</span>_1m&quot;</span>] ?: (currentMinute - <span class="hljs-number">60_000</span>)
+    <span class="hljs-keyword">if</span> (wm &lt;= <span class="hljs-number">0</span>) wm = currentMinute - <span class="hljs-number">60_000</span>
+    
+    <span class="hljs-comment">// Цикл догоняет пропущенные минуты</span>
+    <span class="hljs-keyword">while</span> (wm &lt; currentMinute) {
+        <span class="hljs-keyword">val</span> start = wm
+        <span class="hljs-keyword">val</span> end = start + <span class="hljs-number">60_000</span>
+        <span class="hljs-keyword">val</span> isLastMinute = (end &gt;= currentMinute)
+        
+        <span class="hljs-keyword">val</span> trades = getTradesInRange(symbol, start, end)   <span class="hljs-comment">// SQL → raw_trades</span>
+        <span class="hljs-keyword">if</span> (trades.isNotEmpty()) {
+            build1mAggregate(symbol, start, end, trades)      <span class="hljs-comment">// → footprint</span>
+            
+            <span class="hljs-comment">// ТОЛЬКО на последней минуте: полная статистика</span>
+            <span class="hljs-keyword">if</span> (isLastMinute) {
+                <span class="hljs-keyword">val</span> recentTrades = dao.getRecentRawTrades(<span class="hljs-string">&quot;Binance&quot;</span>, symbol, <span class="hljs-number">10_000</span>)
+                recalculateVolumeStats(symbol, recentTrades, start, end)
+            }
+        } <span class="hljs-keyword">else</span> {
+            saveEmptyAggregate(symbol, <span class="hljs-string">&quot;1m&quot;</span>, start, end)      <span class="hljs-comment">// пустая свеча</span>
+        }
+        
+        <span class="hljs-comment">// Cleanup только на последней минуте</span>
+        <span class="hljs-keyword">if</span> (isLastMinute) {
+            dao.cleanupOldRawTrades(symbol, <span class="hljs-number">10_000</span>)
+            dao.cleanupOldDerivedData(symbol, <span class="hljs-number">86_400_000L</span>)
+        }
+        
+        wm = end
+        watermarks[<span class="hljs-string">&quot;<span class="hljs-subst">${symbol}</span>_1m&quot;</span>] = wm
+    }
+}
+</div></code></pre>
+<h3 id="93-footprint-aggregation">9.3 Footprint Aggregation</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">build1mAggregate</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>, start: <span class="hljs-type">Long</span>, end: <span class="hljs-type">Long</span>, trades: <span class="hljs-type">List</span>&lt;<span class="hljs-type">Trade</span>&gt;)</span></span> {
+    <span class="hljs-keyword">val</span> priceLevels = linkedMapOf&lt;BigDecimal, PriceLevelData&gt;()
+    <span class="hljs-keyword">var</span> minPrice = BigDecimal.ZERO; <span class="hljs-keyword">var</span> maxPrice = BigDecimal.ZERO
+    
+    trades.forEach { trade -&gt;
+        <span class="hljs-keyword">val</span> p = trade.price; <span class="hljs-keyword">val</span> q = trade.quantity
+        <span class="hljs-keyword">if</span> (priceLevels.isEmpty()) { minPrice = p; maxPrice = p }
+        <span class="hljs-keyword">else</span> { <span class="hljs-keyword">if</span> (p &lt; minPrice) minPrice = p; <span class="hljs-keyword">if</span> (p &gt; maxPrice) maxPrice = p }
+        
+        <span class="hljs-keyword">val</span> level = priceLevels.getOrPut(p) { PriceLevelData(p) }
+        <span class="hljs-keyword">if</span> (trade.isBuy) { level.bidVolume += q; level.bidCount++ }
+        <span class="hljs-keyword">else</span> { level.askVolume += q; level.askCount++ }
+    }
+
+    <span class="hljs-keyword">val</span> json = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price })
+    <span class="hljs-keyword">val</span> candle = AggregateCandle(
+        exchange = <span class="hljs-string">&quot;Binance&quot;</span>, symbol = symbol, timeframe = <span class="hljs-string">&quot;1m&quot;</span>,
+        startTime = start, endTime = end,
+        priceLevelsJson = json,
+        totalTicks = trades.size.toLong(),
+        minPrice = minPrice, maxPrice = maxPrice,
+        priceLevels = priceLevels.size
+    )
+    dao.saveAggregate(candle)
+}
+</div></code></pre>
+<p><strong>PriceLevelsJson</strong> — это компактный формат:</p>
+<pre class="hljs"><code><div><span class="hljs-punctuation">[</span><span class="hljs-punctuation">[</span><span class="hljs-number">64200.00</span><span class="hljs-punctuation">,</span> <span class="hljs-number">1.5</span><span class="hljs-punctuation">,</span> <span class="hljs-number">2.3</span><span class="hljs-punctuation">,</span> <span class="hljs-number">3</span><span class="hljs-punctuation">,</span> <span class="hljs-number">5</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span> <span class="hljs-punctuation">[</span><span class="hljs-number">64200.50</span><span class="hljs-punctuation">,</span> <span class="hljs-number">0.8</span><span class="hljs-punctuation">,</span> <span class="hljs-number">1.1</span><span class="hljs-punctuation">,</span> <span class="hljs-number">2</span><span class="hljs-punctuation">,</span> <span class="hljs-number">4</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">]</span>
+</div></code></pre>
+<p>Каждый элемент: <code>[price, bidVolume, askVolume, bidCount, askCount]</code>.</p>
+<h3 id="94-15m-aggregation--слияние-1m-свечей">9.4 15m Aggregation — слияние 1m свечей</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">build15mAggregate</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>, current15m: <span class="hljs-type">Long</span>)</span></span> {
+    <span class="hljs-keyword">val</span> start = current15m - <span class="hljs-number">900_000</span>; <span class="hljs-keyword">val</span> end = current15m
+    
+    <span class="hljs-comment">// Читаем 15 × 1m агрегатов (вместо сырых трейдов)</span>
+    <span class="hljs-keyword">val</span> qmAggregates = dao.get1mAggregates(symbol, start, end)
+    <span class="hljs-keyword">if</span> (qmAggregates.isEmpty()) <span class="hljs-keyword">return</span>
+
+    <span class="hljs-keyword">val</span> priceLevels = linkedMapOf&lt;BigDecimal, PriceLevelData&gt;()
+    <span class="hljs-keyword">for</span> (agg <span class="hljs-keyword">in</span> qmAggregates) {
+        <span class="hljs-keyword">val</span> levels = parsePriceLevelsJson(agg.priceLevelsJson)  <span class="hljs-comment">// десериализация</span>
+        <span class="hljs-keyword">for</span> (level <span class="hljs-keyword">in</span> levels) {
+            <span class="hljs-keyword">val</span> existing = priceLevels.getOrPut(level.price) { PriceLevelData(level.price) }
+            existing.bidVolume += level.bidVolume; existing.askVolume += level.askVolume
+            existing.bidCount += level.bidCount; existing.askCount += level.askCount
+        }
+    }
+    <span class="hljs-comment">// Сохраняем объединённую свечу</span>
+}
+</div></code></pre>
+<p><strong>Оптимизация</strong>: вместо SELECT из <code>raw_trades</code> за 15 минут (потенциально сотни тысяч строк), читаются 15 строк из <code>aggregates</code> и мержатся в памяти.</p>
+<hr>
+<h2 id="10-t-digest-статистика-без-on-log-n">10. t-Digest: статистика без O(n log n)</h2>
+<h3 id="101-почему-t-digest-а-не-полная-сортировка">10.1 Почему t-Digest, а не полная сортировка</h3>
+<p><strong>StreamingWhaleDetector v3 (удалён)</strong>: <code>sorted()</code> 10 000 элементов × 700 TPS = <strong>~200M операций/сек</strong> на одном ядре → CPU 100%.</p>
+<p><strong>t-Digest (текущий)</strong>:</p>
+<ul>
+<li><code>add(volume)</code> — <strong>O(log n)</strong> для вставки, а не O(n)</li>
+<li><code>quantile(0.98)</code> — один запрос раз в минуту, а не на каждый трейд</li>
+<li>700 TPS: 700 × O(log 10000) ≈ 9 100 операций/сек + 1 quantile/мин</li>
+</ul>
+<p>Экономия: <strong>~20 000x</strong> по CPU.</p>
+<h3 id="102-recalculatevolumestats--полный-код">10.2 <code>recalculateVolumeStats()</code> — полный код</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">recalculateVolumeStats</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>, trades: <span class="hljs-type">List</span>&lt;<span class="hljs-type">Trade</span>&gt;, 
+                                    windowStart: <span class="hljs-type">Long</span>, windowEnd: <span class="hljs-type">Long</span>)</span></span> {
+    <span class="hljs-keyword">if</span> (trades.isEmpty()) <span class="hljs-keyword">return</span>
+
+    <span class="hljs-keyword">val</span> digest = MergingDigest(<span class="hljs-number">100.0</span>)         <span class="hljs-comment">// t-Digest с компрессией 100</span>
+    <span class="hljs-keyword">var</span> ewmaMean = <span class="hljs-number">0.0</span>
+    <span class="hljs-keyword">var</span> totalSum = <span class="hljs-number">0.0</span>; <span class="hljs-keyword">var</span> totalSumSq = <span class="hljs-number">0.0</span>
+    <span class="hljs-keyword">var</span> minVol = <span class="hljs-built_in">Double</span>.MAX_VALUE; <span class="hljs-keyword">var</span> maxVol = <span class="hljs-number">0.0</span>
+    <span class="hljs-keyword">val</span> alpha = <span class="hljs-number">1.0</span> / trades.size.coerceAtLeast(<span class="hljs-number">1</span>)
+
+    <span class="hljs-comment">// === ОДИН ПРОХОД ПО ВСЕМ ТРЕЙДАМ ===</span>
+    <span class="hljs-keyword">for</span> (trade <span class="hljs-keyword">in</span> trades) {
+        <span class="hljs-keyword">val</span> vol = trade.getVolumeUsd().toDouble()
+        ewmaMean = alpha * vol + (<span class="hljs-number">1</span> - alpha) * ewmaMean    <span class="hljs-comment">// EWMA</span>
+        digest.add(vol)                                      <span class="hljs-comment">// t-Digest</span>
+        totalSum += vol; totalSumSq += vol * vol
+        <span class="hljs-keyword">if</span> (vol &lt; minVol) minVol = vol
+        <span class="hljs-keyword">if</span> (vol &gt; maxVol) maxVol = vol
+    }
+
+    <span class="hljs-keyword">val</span> n = trades.size.toDouble()
+    <span class="hljs-keyword">val</span> avgVolume = totalSum / n
+    <span class="hljs-keyword">val</span> variance = ((totalSumSq / n) - (avgVolume * avgVolume)).coerceAtLeast(<span class="hljs-number">0.0</span>)
+    
+    <span class="hljs-keyword">val</span> window = VolumeWindow(
+        exchange = <span class="hljs-string">&quot;Binance&quot;</span>, symbol = symbol,
+        startTime = windowStart, endTime = windowEnd,
+        totalTrades = trades.size,
+        minVolume = BigDecimal.valueOf(minVol),
+        maxVolume = BigDecimal.valueOf(maxVol),
+        avgVolume = BigDecimal.valueOf(avgVolume),
+        medianVolume = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.5</span>)),
+        stddevVolume = BigDecimal.valueOf(sqrt(variance)),
+        p50Volume = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.5</span>)),
+        p95Volume = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.95</span>)),
+        p98Volume = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.98</span>)),
+        p99Volume = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.99</span>)),
+        filterPercentile = <span class="hljs-number">0.98</span>,
+        filterThreshold = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.98</span>))
+    )
+    dao.saveVolumeWindow(window)
+
+    <span class="hljs-comment">// === WHALE DETECTION ===</span>
+    <span class="hljs-keyword">val</span> volumeThreshold = BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.98</span>))
+    <span class="hljs-keyword">val</span> batch = mutableListOf&lt;FilteredTrade&gt;()
+    <span class="hljs-keyword">for</span> (trade <span class="hljs-keyword">in</span> trades) {
+        <span class="hljs-keyword">val</span> volUsd = trade.getVolumeUsd()
+        <span class="hljs-keyword">if</span> (volUsd &gt;= volumeThreshold) {
+            <span class="hljs-keyword">val</span> category = <span class="hljs-keyword">when</span> {
+                volUsd &gt;= BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.995</span>)) -&gt; TradeCategory.WHALE
+                volUsd &gt;= BigDecimal.valueOf(digest.quantile(<span class="hljs-number">0.99</span>))  -&gt; TradeCategory.VERY_LARGE
+                <span class="hljs-keyword">else</span> -&gt; TradeCategory.LARGE
+            }
+            batch.add(FilteredTrade(trade, volUsd, <span class="hljs-number">0.98</span>, volumeThreshold, category, ...))
+        }
+    }
+    <span class="hljs-keyword">if</span> (batch.isNotEmpty()) dao.insertFilteredTradesBatch(batch)
+}
+</div></code></pre>
+<h3 id="103-категории-китовых-сделок">10.3 Категории китовых сделок</h3>
+<table>
+<thead>
+<tr>
+<th>Категория</th>
+<th>Порог</th>
+<th>Частота</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LARGE</code></td>
+<td>&gt; p98</td>
+<td>~2% сделок</td>
+</tr>
+<tr>
+<td><code>VERY_LARGE</code></td>
+<td>&gt; p99</td>
+<td>~1%</td>
+</tr>
+<tr>
+<td><code>WHALE</code></td>
+<td>&gt; p99.5</td>
+<td>~0.5%</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="11-liquidation-pipeline">11. Liquidation Pipeline</h2>
+<h3 id="111-поток-данных">11.1 Поток данных</h3>
+<pre><code class="language-mermaid"><div class="mermaid">graph LR
+    WS["Binance WebSocket<br/>forceOrder stream"] --> EC["ExchangeClient<br/>connectAndListenCombined()"]
+    EC -->|"isLiquidationMessageNode()"| LP["LiquidationProcessor"]
+    LP -->|"addLiquidation()"| MB["MinuteBuffer<br/>ConcurrentHashMap"]
+    MB -->|"flush() каждую минуту"| BS["BatchScheduler"]
+    BS -->|"insertLiquidationsBatch()"| DB_RAW["liquidations_{symbol}"]
+    BS -->|"saveLiquidationAggregate()"| DB_AGG["liquidation_aggregates_{symbol}"]
+</div></code></pre>
+<h3 id="112-liquidationprocessor">11.2 <code>LiquidationProcessor</code></h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">LiquidationProcessor</span>(
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> buffer: MinuteBuffer,
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> enabled: <span class="hljs-built_in">Boolean</span> = <span class="hljs-literal">true</span>
+) {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">var</span> totalCount = <span class="hljs-number">0L</span>
+    
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">process</span><span class="hljs-params">(order: <span class="hljs-type">LiquidationOrder</span>)</span></span> {
+        <span class="hljs-keyword">if</span> (!enabled) <span class="hljs-keyword">return</span>
+        buffer.addLiquidation(order.symbol, order)
+        totalCount++
+        <span class="hljs-keyword">if</span> (totalCount % <span class="hljs-number">1000</span> == <span class="hljs-number">0L</span>) log.debug { <span class="hljs-string">&quot;Liquidations: <span class="hljs-variable">$totalCount</span>&quot;</span> }
+    }
+}
+</div></code></pre>
+<h3 id="113-minutebuffer">11.3 <code>MinuteBuffer</code></h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">class</span> <span class="hljs-title class_">MinuteBuffer</span> {
+    <span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> liquidationBuffer = ConcurrentHashMap&lt;String, MutableList&lt;LiquidationOrder&gt;&gt;()
+    
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">addLiquidation</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>, liq: <span class="hljs-type">LiquidationOrder</span>)</span></span> {
+        liquidationBuffer.getOrPut(symbol.uppercase()) { mutableListOf() }
+            .let { synchronized(it) { it.add(liq) } }
+    }
+    
+    <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">flush</span><span class="hljs-params">()</span></span>: LiquidationData {
+        <span class="hljs-keyword">val</span> liquidations = mutableMapOf&lt;String, List&lt;LiquidationOrder&gt;&gt;()
+        liquidationBuffer.forEach { (symbol, list) -&gt;
+            synchronized(list) {
+                <span class="hljs-keyword">if</span> (list.isNotEmpty()) { liquidations[symbol] = list.toList(); list.clear() }
+            }
+        }
+        <span class="hljs-keyword">return</span> LiquidationData(liquidations)
+    }
+}
+</div></code></pre>
+<h3 id="114-batchschedulerprocessliquidations">11.4 BatchScheduler.processLiquidations()</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">processLiquidations</span><span class="hljs-params">(liqs: <span class="hljs-type">Map</span>&lt;<span class="hljs-type">String</span>, List&lt;LiquidationOrder&gt;&gt;)</span></span> {
+    <span class="hljs-keyword">val</span> end = System.currentTimeMillis() / <span class="hljs-number">60_000</span> * <span class="hljs-number">60_000</span>
+    <span class="hljs-keyword">val</span> start = end - <span class="hljs-number">60_000</span>
+
+    liqs.forEach { (symbol, orders) -&gt;
+        <span class="hljs-comment">// 1. Raw liquidation records</span>
+        dao.insertLiquidationsBatch(symbol, orders)
+        
+        <span class="hljs-comment">// 2. Footprint-style aggregation: long→bid, short→ask</span>
+        <span class="hljs-keyword">val</span> priceLevels = linkedMapOf&lt;BigDecimal, PriceLevelData&gt;()
+        orders.forEach { liq -&gt;
+            <span class="hljs-keyword">val</span> p = liq.price; <span class="hljs-keyword">val</span> q = liq.quantity
+            <span class="hljs-keyword">val</span> level = priceLevels.getOrPut(p) { PriceLevelData(p) }
+            <span class="hljs-keyword">if</span> (liq.isLong) { level.bidVolume += q; level.bidCount++ }
+            <span class="hljs-keyword">else</span> { level.askVolume += q; level.askCount++ }
+        }
+        
+        <span class="hljs-comment">// 3. Save aggregated</span>
+        dao.saveLiquidationAggregate(symbol, start, orders)
+        
+        <span class="hljs-comment">// 4. Cleanup old data</span>
+        dao.cleanupOldLiquidations(symbol, <span class="hljs-number">86_400_000L</span>)
+    }
+}
+</div></code></pre>
+<hr>
+<h2 id="12-database-architecture">12. Database Architecture</h2>
+<h3 id="121-per-symbol-таблицы">12.1 Per-symbol таблицы</h3>
+<p>Для каждого из 50 символов создаётся <strong>6 таблиц</strong>:</p>
+<pre class="hljs"><code><div>raw_trades_{symbol}              — сырые сделки (до 10 000 строк)
+aggregates_{symbol}              — footprint свечи (1m + 15m)
+filtered_trades_{symbol}         — китовые сделки
+volume_windows_{symbol}          — статистика объёмов
+liquidations_{symbol}            — сырые ликвидации
+liquidation_aggregates_{symbol}  — агрегированные ликвидации
+</div></code></pre>
+<p><strong>Итого: 50 × 6 = 300 таблиц</strong> в схеме <code>public</code>.</p>
+<h3 id="122-схема-таблиц">12.2 Схема таблиц</h3>
+<h4 id="raw_trades_symbol"><code>raw_trades_{symbol}</code></h4>
+<pre class="hljs"><code><div><span class="hljs-keyword">CREATE TABLE</span> raw_trades_{symbol} (
+    id          BIGSERIAL <span class="hljs-keyword">PRIMARY KEY</span>,
+    exchange    <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">20</span>)    <span class="hljs-keyword">NOT NULL</span>,
+    symbol      <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">20</span>)    <span class="hljs-keyword">NOT NULL</span>,
+    <span class="hljs-type">timestamp</span>   <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    price       <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">20</span>,<span class="hljs-number">8</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    quantity    <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">8</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    is_buy      <span class="hljs-type">BOOLEAN</span>        <span class="hljs-keyword">NOT NULL</span>,
+    created_at  <span class="hljs-type">TIMESTAMP</span> <span class="hljs-keyword">DEFAULT</span> <span class="hljs-built_in">CURRENT_TIMESTAMP</span>
+);
+<span class="hljs-keyword">CREATE</span> INDEX idx_raw_trades_{symbol}_ts <span class="hljs-keyword">ON</span> raw_trades_{symbol} (<span class="hljs-type">timestamp</span> <span class="hljs-keyword">DESC</span>);
+</div></code></pre>
+<h4 id="aggregates_symbol"><code>aggregates_{symbol}</code></h4>
+<pre class="hljs"><code><div><span class="hljs-keyword">CREATE TABLE</span> aggregates_{symbol} (
+    id                  UUID <span class="hljs-keyword">DEFAULT</span> uuid_generate_v4() <span class="hljs-keyword">PRIMARY KEY</span>,
+    exchange            <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">20</span>)    <span class="hljs-keyword">NOT NULL</span>,
+    symbol              <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">20</span>)    <span class="hljs-keyword">NOT NULL</span>,
+    timeframe           <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">10</span>)    <span class="hljs-keyword">NOT NULL</span> <span class="hljs-keyword">CHECK</span> (timeframe <span class="hljs-keyword">IN</span> (<span class="hljs-string">&#x27;1m&#x27;</span>,<span class="hljs-string">&#x27;5m&#x27;</span>,<span class="hljs-string">&#x27;15m&#x27;</span>,<span class="hljs-string">&#x27;30m&#x27;</span>,<span class="hljs-string">&#x27;1h&#x27;</span>,<span class="hljs-string">&#x27;4h&#x27;</span>,<span class="hljs-string">&#x27;1d&#x27;</span>)),
+    start_time          <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    end_time            <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    price_levels_jsonb  JSONB          <span class="hljs-keyword">NOT NULL</span>,        <span class="hljs-comment">-- [[price,bidVol,askVol,bidCnt,askCnt],...]</span>
+    total_ticks         <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    min_price           <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">20</span>,<span class="hljs-number">8</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    max_price           <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">20</span>,<span class="hljs-number">8</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    price_levels        <span class="hljs-type">INTEGER</span>        <span class="hljs-keyword">NOT NULL</span>,
+    <span class="hljs-keyword">UNIQUE</span> (exchange, symbol, timeframe, start_time, end_time)
+);
+</div></code></pre>
+<h4 id="filtered_trades_symbol"><code>filtered_trades_{symbol}</code></h4>
+<pre class="hljs"><code><div><span class="hljs-keyword">CREATE TABLE</span> filtered_trades_{symbol} (
+    id                   BIGSERIAL <span class="hljs-keyword">PRIMARY KEY</span>,
+    <span class="hljs-comment">-- ... поля Trade ...</span>
+    volume_usd           <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">2</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    percentile_threshold <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">5</span>,<span class="hljs-number">2</span>)   <span class="hljs-keyword">NOT NULL</span>,
+    volume_threshold     <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">8</span>)  <span class="hljs-keyword">NOT NULL</span>,
+    trade_category       <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">20</span>),             <span class="hljs-comment">-- LARGE, VERY_LARGE, WHALE</span>
+    window_start_time    <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    window_end_time      <span class="hljs-type">BIGINT</span>         <span class="hljs-keyword">NOT NULL</span>,
+    window_total_trades  <span class="hljs-type">INTEGER</span>        <span class="hljs-keyword">NOT NULL</span>,
+    <span class="hljs-keyword">UNIQUE</span> (<span class="hljs-type">timestamp</span>, price, quantity, is_buy)   <span class="hljs-comment">-- дедупликация</span>
+);
+</div></code></pre>
+<h4 id="liquidations_symbol"><code>liquidations_{symbol}</code></h4>
+<pre class="hljs"><code><div><span class="hljs-keyword">CREATE TABLE</span> liquidations_{symbol} (
+    <span class="hljs-type">timestamp</span>   <span class="hljs-type">BIGINT</span> <span class="hljs-keyword">NOT NULL</span>,
+    price       <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">20</span>,<span class="hljs-number">8</span>) <span class="hljs-keyword">NOT NULL</span>,
+    quantity    <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">8</span>) <span class="hljs-keyword">NOT NULL</span>,
+    is_long     <span class="hljs-type">BOOLEAN</span> <span class="hljs-keyword">NOT NULL</span>,
+    order_type  <span class="hljs-type">VARCHAR</span>(<span class="hljs-number">10</span>),
+    <span class="hljs-keyword">PRIMARY KEY</span> (<span class="hljs-type">timestamp</span>, price, quantity)
+);
+</div></code></pre>
+<h4 id="liquidation_aggregates_symbol"><code>liquidation_aggregates_{symbol}</code></h4>
+<pre class="hljs"><code><div><span class="hljs-keyword">CREATE TABLE</span> liquidation_aggregates_{symbol} (
+    start_time        <span class="hljs-type">BIGINT</span> <span class="hljs-keyword">NOT NULL</span>,
+    end_time          <span class="hljs-type">BIGINT</span> <span class="hljs-keyword">NOT NULL</span>,
+    long_count        <span class="hljs-type">INT</span> <span class="hljs-keyword">DEFAULT</span> <span class="hljs-number">0</span>,
+    long_volume       <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">8</span>) <span class="hljs-keyword">DEFAULT</span> <span class="hljs-number">0</span>,
+    short_count       <span class="hljs-type">INT</span> <span class="hljs-keyword">DEFAULT</span> <span class="hljs-number">0</span>,
+    short_volume      <span class="hljs-type">DECIMAL</span>(<span class="hljs-number">30</span>,<span class="hljs-number">8</span>) <span class="hljs-keyword">DEFAULT</span> <span class="hljs-number">0</span>,
+    <span class="hljs-keyword">PRIMARY KEY</span> (start_time)
+);
+</div></code></pre>
+<h3 id="123-lazy-table-creation">12.3 Lazy Table Creation</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">private</span> <span class="hljs-keyword">val</span> ensuredTables = ConcurrentHashMap.newKeySet&lt;String&gt;()
+
+<span class="hljs-keyword">private</span> <span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">ensureTables</span><span class="hljs-params">(symbol: <span class="hljs-type">String</span>)</span></span> {
+    <span class="hljs-keyword">val</span> key = symbol.lowercase()
+    <span class="hljs-keyword">if</span> (!ensuredTables.add(key)) <span class="hljs-keyword">return</span>       <span class="hljs-comment">// Уже созданы — пропускаем</span>
+    
+    dataSource.connection.use { conn -&gt;
+        <span class="hljs-keyword">val</span> stmt = conn.createStatement()
+        stmt.execute(<span class="hljs-string">&quot;CREATE TABLE IF NOT EXISTS raw_trades_<span class="hljs-subst">${key}</span> (...)&quot;</span>)
+        stmt.execute(<span class="hljs-string">&quot;CREATE TABLE IF NOT EXISTS aggregates_<span class="hljs-subst">${key}</span> (...)&quot;</span>)
+        <span class="hljs-comment">// ... 6 таблиц</span>
+    }
+}
+</div></code></pre>
+<p>Таблицы создаются при первом обращении к символу. Потокобезопасно через <code>ConcurrentHashMap.add()</code>.</p>
+<h3 id="124-hikaricp-connection-pool">12.4 HikariCP Connection Pool</h3>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">fun</span> <span class="hljs-title">createDataSource</span><span class="hljs-params">(config: <span class="hljs-type">DatabaseConfig</span>)</span></span>: HikariDataSource {
+    <span class="hljs-keyword">val</span> hikariConfig = HikariConfig().apply {
+        jdbcUrl = <span class="hljs-string">&quot;jdbc:postgresql://<span class="hljs-subst">${config.resolvedHost}</span>:<span class="hljs-subst">${config.resolvedPort}</span>/<span class="hljs-subst">${config.resolvedDatabase}</span>&quot;</span>
+        maximumPoolSize = <span class="hljs-number">15</span>
+        minimumIdle = <span class="hljs-number">5</span>
+        connectionTimeout = <span class="hljs-number">30000</span>
+        idleTimeout = <span class="hljs-number">600000</span>
+        maxLifetime = <span class="hljs-number">1800000</span>
+        poolName = <span class="hljs-string">&quot;TradePool&quot;</span>
+        addDataSourceProperty(<span class="hljs-string">&quot;reWriteBatchedInserts&quot;</span>, <span class="hljs-string">&quot;true&quot;</span>)          <span class="hljs-comment">// batch rewrite</span>
+        addDataSourceProperty(<span class="hljs-string">&quot;preparedStatementCacheQueries&quot;</span>, <span class="hljs-string">&quot;1024&quot;</span>)   <span class="hljs-comment">// кеш statement</span>
+        addDataSourceProperty(<span class="hljs-string">&quot;preparedStatementCacheSizeMiB&quot;</span>, <span class="hljs-string">&quot;32&quot;</span>)
+        addDataSourceProperty(<span class="hljs-string">&quot;tcpKeepAlive&quot;</span>, <span class="hljs-string">&quot;true&quot;</span>)
+        leakDetectionThreshold = <span class="hljs-number">2000</span>                                    <span class="hljs-comment">// детекция утечек</span>
+        keepaliveTime = <span class="hljs-number">300_000</span>
+        connectionTestQuery = <span class="hljs-string">&quot;SELECT 1&quot;</span>
+    }
+    <span class="hljs-keyword">return</span> HikariDataSource(hikariConfig)
+}
+</div></code></pre>
+<h3 id="125-cleanup-policies">12.5 Cleanup Policies</h3>
+<table>
+<thead>
+<tr>
+<th>Таблица</th>
+<th>Политика</th>
+<th>Параметр</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>raw_trades</code></td>
+<td>Оставлять последние N строк</td>
+<td><code>maxRows = 10 000</code></td>
+</tr>
+<tr>
+<td><code>aggregates</code></td>
+<td>Удалять старше retention</td>
+<td><code>retentionMs = 86 400 000</code> (1 день)</td>
+</tr>
+<tr>
+<td><code>filtered_trades</code></td>
+<td>Удалять старше retention</td>
+<td><code>retentionMs = 86 400 000</code></td>
+</tr>
+<tr>
+<td><code>volume_windows</code></td>
+<td>Удалять старше retention</td>
+<td><code>retentionMs = 86 400 000</code></td>
+</tr>
+<tr>
+<td><code>liquidations</code></td>
+<td>Удалять старше retention</td>
+<td><code>retentionMs = 86 400 000</code></td>
+</tr>
+<tr>
+<td><code>liquidation_aggregates</code></td>
+<td>Удалять старше retention</td>
+<td><code>retentionMs = 86 400 000</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="13-monitoring--observability">13. Monitoring &amp; Observability</h2>
+<h3 id="131-http-endpoints">13.1 HTTP Endpoints</h3>
+<table>
+<thead>
+<tr>
+<th>Путь</th>
+<th>Метод</th>
+<th>Назначение</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/health</code></td>
+<td>GET</td>
+<td><code>{&quot;status&quot;:&quot;healthy&quot;}</code> или <code>&quot;degraded&quot;</code> (проверка <code>SELECT 1</code>)</td>
+</tr>
+<tr>
+<td><code>/metrics</code></td>
+<td>GET</td>
+<td><code>totalTrades</code>, <code>tradesPerSecond</code>, <code>batchQueueSize</code>, <code>instruments</code></td>
+</tr>
+<tr>
+<td><code>/status</code></td>
+<td>GET</td>
+<td>Полный статус: версия, uptime, метрики, CPU, память, диск, БД</td>
+</tr>
+<tr>
+<td><code>/exchanges</code></td>
+<td>GET</td>
+<td>Конфигурация бирж из <code>ConfigManager</code></td>
+</tr>
+<tr>
+<td><code>/database/stats</code></td>
+<td>GET</td>
+<td>Размер БД, количество raw_trades-таблиц</td>
+</tr>
+<tr>
+<td><code>/api/logs</code></td>
+<td>GET</td>
+<td>Последние 200 строк лога (in-memory)</td>
+</tr>
+<tr>
+<td><code>/api/instruments</code></td>
+<td>GET</td>
+<td>Per-symbol статистика (сделки, last trade time, queue size)</td>
+</tr>
+<tr>
+<td><code>/api/history/{symbol}</code></td>
+<td>GET</td>
+<td>Агрегационный статус по минутам (cached 10s)</td>
+</tr>
+<tr>
+<td><code>/api/history/all</code></td>
+<td>GET</td>
+<td>То же для всех символов (cached 10s)</td>
+</tr>
+<tr>
+<td><code>/api/metrics/history</code></td>
+<td>GET</td>
+<td>История TPS/load/heap (последние 1440 снимков)</td>
+</tr>
+<tr>
+<td><code>/</code></td>
+<td>GET</td>
+<td>Статический дашборд из <code>static/</code> (если есть)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="132-status-log-каждые-10-секунд">13.2 STATUS log (каждые 10 секунд)</h3>
+<pre class="hljs"><code><div>STATUS | ticks=74953690 tps=43 queue=0 clients=1 mem_total=512MB mem_free=315MB
+</div></code></pre>
+<h3 id="133-логирование">13.3 Логирование</h3>
+<pre class="hljs"><code><div><span class="hljs-comment">// Logback → DashboardLogAppender → LogCapture (200 последних строк)</span>
+<span class="hljs-comment">// Доступно через /api/logs</span>
+</div></code></pre>
+<hr>
+<h2 id="14-deployment--infrastructure">14. Deployment &amp; Infrastructure</h2>
+<h3 id="141-vps">14.1 VPS</h3>
+<ul>
+<li><strong>Хост</strong>: <code>formyfrontend.fvds.ru</code> (95.81.99.28)</li>
+<li><strong>OS</strong>: Ubuntu, 1.8 GB RAM, 40 GB SSD</li>
+<li><strong>Java</strong>: JDK 21</li>
+</ul>
+<h3 id="142-systemd-unit">14.2 Systemd Unit</h3>
+<pre class="hljs"><code><div><span class="hljs-section">[Unit]</span>
+<span class="hljs-attr">Description</span>=Trade Collector Service
+<span class="hljs-attr">After</span>=network.target
+
+<span class="hljs-section">[Service]</span>
+<span class="hljs-attr">Type</span>=simple
+<span class="hljs-attr">User</span>=deploy
+<span class="hljs-attr">WorkingDirectory</span>=/opt/trade-collector/current
+<span class="hljs-attr">Environment</span>=APP_ENV=production
+<span class="hljs-attr">ExecStartPre</span>=/bin/bash -c <span class="hljs-string">&#x27;until pg_isready -h localhost -p 5432; do sleep 2; done&#x27;</span>
+<span class="hljs-attr">ExecStart</span>=/opt/trade-collector/current/run.sh
+<span class="hljs-attr">Restart</span>=<span class="hljs-literal">on</span>-failure
+<span class="hljs-attr">RestartSec</span>=<span class="hljs-number">10</span>
+<span class="hljs-attr">LimitNOFILE</span>=<span class="hljs-number">65536</span>
+
+<span class="hljs-section">[Install]</span>
+<span class="hljs-attr">WantedBy</span>=multi-user.target
+</div></code></pre>
+<h3 id="143-jvm-flags">14.3 JVM Flags</h3>
+<pre class="hljs"><code><div>-Xmx768m -Xms512m
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:+HeapDumpOnOutOfMemoryError
+</div></code></pre>
+<h3 id="144-deploy-process-make-deploy">14.4 Deploy Process (<code>make deploy</code>)</h3>
+<pre class="hljs"><code><div>make deploy VPS_HOST=95.81.99.28 VPS_USER=root VPS_SSH_KEY=~/.ssh/vps_key
+</div></code></pre>
+<p>Шаги:</p>
+<ol>
+<li><code>shadowJar</code> (fat JAR, ~19 MB)</li>
+<li><code>tar.gz</code> упаковка (JAR + config + run.sh + systemd unit + dashboard)</li>
+<li><code>scp</code> на VPS</li>
+<li>SSH: <code>systemctl stop</code>, распаковка, <code>systemctl start</code></li>
+<li>Health check: <code>curl http://localhost:8080/health</code> (до 10 попыток)</li>
+<li>Rollback при провале health check</li>
+</ol>
+<hr>
+<h2 id="15-failure-modes--resilience">15. Failure Modes &amp; Resilience</h2>
+<h3 id="151-матрица-отказов">15.1 Матрица отказов</h3>
+<table>
+<thead>
+<tr>
+<th>Отказ</th>
+<th>Детекция</th>
+<th>Реакция</th>
+<th>Восстановление</th>
+<th>Потеря данных</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WebSocket disconnect</td>
+<td><code>Frame.Close</code> / IOException</td>
+<td>Exponential backoff reconnect</td>
+<td>Авто</td>
+<td>0 (все трейды за время разрыва потеряны, Binance не replay)</td>
+</tr>
+<tr>
+<td>Silent WebSocket</td>
+<td>Watchdog: 60s/120s без фреймов</td>
+<td><code>this@webSocket.cancel()</code> → reconnect</td>
+<td>Авто</td>
+<td>0</td>
+</tr>
+<tr>
+<td>PostgreSQL недоступна</td>
+<td>SQLException в <code>insertRawTradesBatch()</code></td>
+<td>Circuit Breaker → DiskBuffer</td>
+<td>Авто: HALF_OPEN → CLOSED</td>
+<td>DiskBuffer сохраняет трейды</td>
+</tr>
+<tr>
+<td>PostgreSQL перегружена</td>
+<td>Circuit Breaker: 3 ошибки → OPEN</td>
+<td>DiskBuffer</td>
+<td>Replay при старте</td>
+<td>0 (DiskBuffer)</td>
+</tr>
+<tr>
+<td>Malformed WebSocket frame</td>
+<td><code>parseTrade()</code> → null</td>
+<td>DeadLetterQueue (max 1000)</td>
+<td>Ручной анализ</td>
+<td>Трейд потерян</td>
+</tr>
+<tr>
+<td>OOM</td>
+<td>JVM crash</td>
+<td><code>-XX:+HeapDumpOnOutOfMemoryError</code></td>
+<td>Systemd restart</td>
+<td>0 (всё в БД)</td>
+</tr>
+<tr>
+<td>Рестарт сервиса</td>
+<td>—</td>
+<td>Watermark recovery из aggregates</td>
+<td>Авто: catch-up loop</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Долгий простой (&gt;1 дня)</td>
+<td>Watermark сильно отстаёт</td>
+<td>Catch-up: обработка каждой пропущенной минуты</td>
+<td>Авто (может занять время)</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Дубликаты трейдов</td>
+<td>—</td>
+<td><code>ON CONFLICT DO NOTHING</code> на filtered_trades и liquidations</td>
+<td>Авто</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Дубликаты агрегатов</td>
+<td>—</td>
+<td><code>ON CONFLICT DO UPDATE</code> на aggregates</td>
+<td>Авто</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="152-наиболее-вероятные-сценарии">15.2 Наиболее вероятные сценарии</h3>
+<p><strong>Сценарий 1: Binance закрывает стрим без Close-фрейма</strong></p>
+<ul>
+<li>Частота: ~раз в 1-3 дня</li>
+<li>Детекция: Watchdog через 120 секунд</li>
+<li>Время простоя: 120 секунд</li>
+<li>Потеря данных: трейды за 120 секунд (Binance не предоставляет replay)</li>
+</ul>
+<p><strong>Сценарий 2: PostgreSQL restart</strong></p>
+<ul>
+<li>Детекция: Circuit Breaker через 3 ошибки</li>
+<li>Реакция: DiskBuffer</li>
+<li>Восстановление: автоматическое при возврате БД</li>
+<li>Потеря данных: 0</li>
+</ul>
+<p><strong>Сценарий 3: Переполнение диска</strong></p>
+<ul>
+<li>Детекция: OS-level мониторинг (вне сервиса)</li>
+<li>Реакция: Ручное вмешательство</li>
+<li>Предотвращение: cleanup каждую минуту (raw_trades → 10K, derived → 24h)</li>
+</ul>
+<hr>
+<h2 id="16-performance-characteristics">16. Performance Characteristics</h2>
+<h3 id="161-профиль-нагрузки">16.1 Профиль нагрузки</h3>
+<table>
+<thead>
+<tr>
+<th>Метрика</th>
+<th>Норма</th>
+<th>Пик</th>
+<th>Примечание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>10-30%</td>
+<td>80% (BatchScheduler на границе минуты)</td>
+<td>t-Digest quantile запрос</td>
+</tr>
+<tr>
+<td>Heap</td>
+<td>300-450 MB</td>
+<td>500 MB</td>
+<td>GC раз в ~60 секунд</td>
+</tr>
+<tr>
+<td>TPS</td>
+<td>200-400</td>
+<td>700</td>
+<td>Зависит от рыночной активности</td>
+</tr>
+<tr>
+<td>DB connections</td>
+<td>5-10</td>
+<td>15 (max pool)</td>
+<td>Большинство — idle</td>
+</tr>
+<tr>
+<td>WebSocket frame rate</td>
+<td>200-700/сек</td>
+<td>—</td>
+<td>Одно combined-соединение</td>
+</tr>
+<tr>
+<td>Disk I/O</td>
+<td>Низкий</td>
+<td>Средний (BatchScheduler)</td>
+<td>В основном WAL-запись</td>
+</tr>
+<tr>
+<td>Network (out)</td>
+<td>~10 KB/s</td>
+<td>~50 KB/s</td>
+<td>HTTP мониторинг</td>
+</tr>
+</tbody>
+</table>
+<h3 id="162-hot-path-vs-cold-path">16.2 &quot;Hot path&quot; vs &quot;Cold path&quot;</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Частота</th>
+<th>Операции</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hot</strong>: WebSocket → TradeProcessor → BatchProcessor</td>
+<td>700/сек</td>
+<td>JSON parse + queue add</td>
+</tr>
+<tr>
+<td><strong>Cold</strong>: BatchScheduler.tick()</td>
+<td>1/сек</td>
+<td>Проверка minute boundary</td>
+</tr>
+<tr>
+<td><strong>Cold</strong>: BatchScheduler.processSymbol()</td>
+<td>1/мин/символ</td>
+<td>SQL SELECT + aggregate + t-Digest</td>
+</tr>
+<tr>
+<td><strong>Cold</strong>: Cleanup</td>
+<td>1/мин/символ</td>
+<td>DELETE запросы</td>
+</tr>
+</tbody>
+</table>
+<p>Горячий путь оптимизирован для минимальных аллокаций: Jackson parse + <code>ConcurrentLinkedQueue.offer()</code>.</p>
+<p>Холодный путь не критичен по latency — выполняется раз в минуту.</p>
+<h3 id="163-оптимизации">16.3 Оптимизации</h3>
+<table>
+<thead>
+<tr>
+<th>Оптимизация</th>
+<th>Что даёт</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Combined WebSocket stream</td>
+<td>1 TCP соединение вместо 100</td>
+</tr>
+<tr>
+<td>t-Digest вместо сортировки</td>
+<td>~20 000× снижение CPU для whale detection</td>
+</tr>
+<tr>
+<td>Per-symbol partition (таблицы)</td>
+<td>Изоляция cleanup, нет contention</td>
+</tr>
+<tr>
+<td>Batch INSERT</td>
+<td>До 5000 строк за один round-trip к БД</td>
+</tr>
+<tr>
+<td><code>reWriteBatchedInserts=true</code></td>
+<td>PostgreSQL переписывает batch → multi-VALUES</td>
+</tr>
+<tr>
+<td>Prepared statement cache</td>
+<td>Не перекомпилирует SQL</td>
+</tr>
+<tr>
+<td>Per-key locking в BatchProcessor</td>
+<td>Нет head-of-line blocking между инструментами</td>
+</tr>
+<tr>
+<td>Lazy table creation</td>
+<td>Не создаёт таблицы для символов без трейдов</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="17-сложность-микросервиса-анализ">17. Сложность микросервиса: анализ</h2>
+<h3 id="171-компонентная-сложность">17.1 Компонентная сложность</h3>
+<p>На первый взгляд, trade-collector — &quot;просто читает WebSocket и пишет в БД&quot;. На практике, вот количество концепций, которые пришлось реализовать для production-grade сервиса:</p>
+<pre><code class="language-mermaid"><div class="mermaid">graph TB
+    TC["Trade Collector<br/>~2800 строк Kotlin<br/>~20 классов<br/>~300 таблиц в БД"]
+    
+    TC --> A["Connection Management<br/>• Combined streams<br/>• Per-symbol fallback<br/>• Subscription messages<br/>• URL construction by exchange"]
+    
+    TC --> B["Resilience<br/>• Watchdog (silence detection)<br/>• Ktor ping (TCP keepalive)<br/>• Exponential backoff<br/>• Circuit Breaker (3-state)<br/>• DiskBuffer fallback<br/>• DeadLetterQueue<br/>• Graceful shutdown chain"]
+    
+    TC --> C["Data Pipeline<br/>• Hot loop (700 TPS)<br/>• Batch queuing (per-symbol)<br/>• Size + time triggers<br/>• TPS tracking<br/>• Instrument stats"]
+    
+    TC --> D["Analytics<br/>• Watermark recovery<br/>• Catch-up loop<br/>• Footprint aggregation<br/>• 15m merge from 1m<br/>• t-Digest statistics<br/>• Whale detection (3 categories)<br/>• Liquidation aggregation"]
+    
+    TC --> E["Storage<br/>• Per-symbol table partitioning<br/>• Lazy DDL creation<br/>• Batch INSERT with retry<br/>• ON CONFLICT strategies<br/>• Cleanup policies<br/>• HikariCP pool tuning"]
+    
+    TC --> F["Observability<br/>• Health endpoint<br/>• Metrics endpoint<br/>• Status endpoint (CPU/mem/disk)<br/>• Log capture (200 lines)<br/>• Metrics history (1440 snapshots)<br/>• Per-symbol history API"]
+    
+    TC --> G["Deployment<br/>• Shadow JAR (fat)<br/>• Systemd unit<br/>• Environment-based config<br/>• Health check + rollback<br/>• Graceful shutdown with timeouts"]
+</div></code></pre>
+<h3 id="172-эволюция-сложности">17.2 Эволюция сложности</h3>
+<table>
+<thead>
+<tr>
+<th>Версия</th>
+<th>Строк кода</th>
+<th>Ключевые изменения</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v0.1</td>
+<td>~400</td>
+<td>Базовый WebSocket → PostgreSQL</td>
+</tr>
+<tr>
+<td>v1.0</td>
+<td>~1200</td>
+<td>BatchProcessor, CircuitBreaker, MonitoringServer</td>
+</tr>
+<tr>
+<td>v2.0</td>
+<td>~2000</td>
+<td>BatchScheduler, t-Digest, whale detection, shutdown chain, DiskBuffer, DeadLetterQueue</td>
+</tr>
+<tr>
+<td>v3.0</td>
+<td>~2800</td>
+<td>Liquidation pipeline, 50 symbols, combined forceOrder streams, watchdog fix (<code>this@webSocket.cancel()</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="173-что-делает-сервис-сложным">17.3 Что делает сервис &quot;сложным&quot;</h3>
+<p>Не объём кода (2800 строк — скромно), а <strong>плотность концепций</strong> на строку:</p>
+<ol>
+<li><strong>Асинхронная модель</strong>: корутины (не потоки), <code>SupervisorJob</code>, <code>CoroutineScope</code>, каналы <code>incoming</code>, <code>callbackFlow</code></li>
+<li><strong>Распределённые отказы</strong>: WebSocket рвётся, БД падает, Binance throttles — и каждое нужно обработать по-разному</li>
+<li><strong>Согласованность данных</strong>: watermark recovery после рестарта, catch-up для пропущенных минут, дедупликация через UNIQUE constraints</li>
+<li><strong>Статистика в реальном времени</strong>: EWMA, t-Digest, перцентили, стандартное отклонение — всё за один проход по данным</li>
+<li><strong>Оптимизация под нагрузку</strong>: batch INSERT, prepared statement cache, per-symbol partitioning, combined streams, per-key locking</li>
+<li><strong>Эксплуатация</strong>: gracefule shutdown с таймаутами, health checks, rollback при deploy, логирование в память для дашборда</li>
+</ol>
+<h3 id="174-аналогия-почему-простой-микросервис-не-прост">17.4 Аналогия: почему &quot;простой микросервис&quot; не прост</h3>
+<p>&quot;Прочитать WebSocket → записать в БД&quot; звучит как 50 строк кода. Но чтобы это работало <strong>без присмотра 24/7 с recovery после любого отказа</strong> — нужно всё перечисленное выше. Каждый дополнительный уровень надёжности добавляет ~200-300 строк специализированного кода:</p>
+<table>
+<thead>
+<tr>
+<th>Уровень</th>
+<th>Строк</th>
+<th>Что даёт</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Базовая функциональность</td>
+<td>~300</td>
+<td>Connect → Parse → Insert</td>
+</tr>
+<tr>
+<td>Recovery (reconnect)</td>
+<td>+200</td>
+<td>Watchdog, backoff, catch-up</td>
+</tr>
+<tr>
+<td>Buffering (batch)</td>
+<td>+300</td>
+<td>Queues, triggers, per-key locks</td>
+</tr>
+<tr>
+<td>Resilience (DB down)</td>
+<td>+250</td>
+<td>Circuit Breaker, DiskBuffer, DeadLetterQueue</td>
+</tr>
+<tr>
+<td>Analytics</td>
+<td>+400</td>
+<td>Watermarks, t-Digest, whale detection, aggregation</td>
+</tr>
+<tr>
+<td>Liquidation pipeline</td>
+<td>+300</td>
+<td>MinutBuffer, LiquidationProcessor, 2 new table types</td>
+</tr>
+<tr>
+<td>Monitoring</td>
+<td>+400</td>
+<td>8 endpoints, log capture, metrics history</td>
+</tr>
+<tr>
+<td>Deployment</td>
+<td>+200</td>
+<td>Config loading, env override, graceful shutdown</td>
+</tr>
+<tr>
+<td><strong>Итого</strong></td>
+<td><strong>~2800</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="18-api-reference">18. API Reference</h2>
+<h3 id="181-monitoring-server-порт-8080">18.1 Monitoring Server (порт 8080)</h3>
+<h4 id="get-health"><code>GET /health</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;status&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;healthy&quot;</span><span class="hljs-punctuation">}</span>
+</div></code></pre>
+<p>Проверяет <code>SELECT 1</code> и статус WebSocket-клиентов.</p>
+<h4 id="get-status"><code>GET /status</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">{</span>
+    <span class="hljs-attr">&quot;version&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2.0.0&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;uptime&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;2d 14h 32m&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;ticks&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">74953690</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;tps&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">43</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;queue&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;clients&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;cpu&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0.15</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;heapUsedMB&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">350</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;heapMaxMB&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">768</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;nonHeapMB&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">64</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;dbSize&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;735 MB&quot;</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-attr">&quot;symbols&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">50</span>
+<span class="hljs-punctuation">}</span>
+</div></code></pre>
+<h3 id="182-database-market-data-server-api-порт-8085">18.2 Database (market-data-server API, порт 8085)</h3>
+<h4 id="get-apiinstrumentsexchangebinance"><code>GET /api/instruments?exchange=Binance</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">[</span>
+    <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;symbol&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;BTCUSDT&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;start&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1780676100000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;end&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1781276040000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;candles&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10660</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+    <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;symbol&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;ETHUSDT&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;start&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1780676100000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;end&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1781276040000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;candles&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">10660</span><span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">]</span>
+</div></code></pre>
+<h4 id="get-apifootprintsymbolbtcusdttimeframe1mlimit2"><code>GET /api/footprint?symbol=BTCUSDT&amp;timeframe=1m&amp;limit=2</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">[</span>
+    <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">&quot;exchange&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Binance&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;symbol&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;BTCUSDT&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;timeframe&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;1m&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;startTime&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1781276280000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;endTime&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1781276340000</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;totalTicks&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1952</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;minPrice&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;63879.00000000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;maxPrice&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;63940.40000000&quot;</span><span class="hljs-punctuation">,</span>
+        <span class="hljs-attr">&quot;levels&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span>
+            <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;price&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;63879.00000000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;bidVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;askVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.21400000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;bidCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;askCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">,</span>
+            <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;price&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;63940.40000000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;bidVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.01000000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;askVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;bidCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;askCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">}</span>
+        <span class="hljs-punctuation">]</span>
+    <span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">]</span>
+</div></code></pre>
+<h4 id="get-apiliquidationssymbolbtcusdtlimit2"><code>GET /api/liquidations?symbol=BTCUSDT&amp;limit=2</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">[</span>
+    <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;exchange&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Binance&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;symbol&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;BTCUSDT&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;timestamp&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1782121170508</span><span class="hljs-punctuation">,</span>
+     <span class="hljs-attr">&quot;price&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;64033.70000000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;quantity&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.00100000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;isLong&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">true</span></span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;orderType&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;LIMIT&quot;</span><span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">]</span>
+</div></code></pre>
+<h4 id="get-apiliquidation-aggregatessymbolbtcusdtlimit2"><code>GET /api/liquidation-aggregates?symbol=BTCUSDT&amp;limit=2</code></h4>
+<pre class="hljs"><code><div><span class="hljs-punctuation">[</span>
+    <span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;exchange&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;Binance&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;symbol&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;BTCUSDT&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;timeframe&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;1m&quot;</span><span class="hljs-punctuation">,</span>
+     <span class="hljs-attr">&quot;startTime&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1782121140000</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;endTime&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1782121200000</span><span class="hljs-punctuation">,</span>
+     <span class="hljs-attr">&quot;longCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">1</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;longVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.00100000&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;shortCount&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;shortVolume&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.00000000&quot;</span><span class="hljs-punctuation">}</span>
+<span class="hljs-punctuation">]</span>
+</div></code></pre>
+
+</body>
+</html>
