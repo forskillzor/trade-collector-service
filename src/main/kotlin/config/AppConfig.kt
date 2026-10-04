@@ -11,7 +11,8 @@ private val log = KotlinLogging.logger {}
 data class ExchangeConfig(
     val name: String,
     val symbols: List<String>,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val collectLiquidations: Boolean = false
 )
 
 @Serializable
@@ -25,7 +26,6 @@ data class DatabaseConfig(
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000
 ) {
-    // Вычисляемые свойства для переменных окружения
     val resolvedHost: String
         get() = System.getenv("DB_HOST") ?: host
 
@@ -43,15 +43,14 @@ data class DatabaseConfig(
         ?: throw IllegalStateException(
             "Database password not configured! Set DB_PASSWORD environment variable or in config.json"
         )
-
 }
+
 @Serializable
 data class ProcessorConfig(
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000,
-    val windowSize: Int = 10000,
-    val slideStep: Int = 1000,
-    val filterPercentile: Double = 0.98,
+    val whaleWindowSize: Int = 10000,
+    val whalePercentile: Double = 0.98,
     val timeframes: List<String> = listOf("1m", "15m")
 )
 
@@ -91,55 +90,35 @@ object ConfigManager {
 
     fun loadFromFile(path: String = "config.json"): Boolean {
         return try {
-            // ✅ Пробуем несколько путей
             val possiblePaths = listOf(
-                path,  // Текущая директория
-                "../$path",  // На уровень выше (для запуска из подпапки)
-                "../../$path", // На два уровня выше
-                "src/main/resources/$path", // В ресурсах
-                System.getProperty("user.dir") + "/$path", // Абсолютный путь из рабочей директории
-                File(".").absolutePath + "/$path" // Текущая директория как File
+                path,
+                "../$path",
+                "../../$path",
+                "src/main/resources/$path",
+                System.getProperty("user.dir") + "/$path",
+                "config/config.prod.json",
+                System.getProperty("user.dir") + "/config/config.prod.json"
             )
-
-            var configFile: File? = null
-            var foundPath: String? = null
-
-            for (possiblePath in possiblePaths) {
-                val file = File(possiblePath)
-                if (file.exists() && file.isFile) {
-                    configFile = file
-                    foundPath = file.absolutePath
-                    break
-                }
+            val file = possiblePaths.map { File(it) }.firstOrNull { it.exists() }
+            
+            if (file != null) {
+                log.info { "Config found: ${file.absolutePath}" }
+                config = jsonFormat.decodeFromString(file.readText())
+                log.info { "Config loaded successfully" }
+                true
+            } else {
+                log.warn { "No config file found in any location" }
+                false
             }
-
-            if (configFile == null) {
-                log.error { "Config not found, searched: ${possiblePaths.joinToString(", ")} (cwd=${File(".").absolutePath})" }
-                return false
-            }
-
-            log.info { "Config found: $foundPath" }
-            val json = configFile.readText()
-
-            config = jsonFormat.decodeFromString<AppConfig>(json)
-
-            log.info { "Config loaded successfully" }
-            true
-
         } catch (e: Exception) {
-            log.error(e) { "Config parse error" }
+            log.error(e) { "Failed to load config" }
             false
         }
     }
 
-    fun getConfig(): AppConfig = config
-
     fun loadFromEnv(): Boolean {
-        val path = when (System.getenv("APP_ENV")?.lowercase()) {
-            "production" -> "config/config.prod.json"
-            else -> "config/config.dev.json"
-        }
-        val finalPath = System.getenv("CONFIG_PATH") ?: path
-        return loadFromFile(finalPath)
+        return loadFromFile(System.getenv("CONFIG_PATH") ?: "config.json")
     }
+
+    fun getConfig(): AppConfig = config
 }

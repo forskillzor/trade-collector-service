@@ -7,8 +7,8 @@ echo "📦 Preparing deployment package..."
 rm -rf deploy-package
 mkdir -p deploy-package
 
-# 1. Находим JAR файл
-JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+# 1. Находим JAR файл (берём shadowJar — он самый большой)
+JAR_FILE=$(find build/libs -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -printf "%s %p\n" | sort -rn | head -1 | cut -d' ' -f2-)
 
 if [ -z "$JAR_FILE" ]; then
     echo "❌ ERROR: No JAR file found in build/libs/"

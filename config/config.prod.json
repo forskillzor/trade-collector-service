@@ -2,10 +2,18 @@
   "exchanges": [
     {
       "name": "Binance",
-      "symbols": ["btcusdt", "ethusdt", "bnbusdt", "xrpusdt", "solusdt", "trxusdt", "hypeusdt", "dogeusdt", "zecusdt",
-        "adausdt", "xlmusdt", "linkusdt", "bchusdt", "tonusdt", "musdt", "ltcusdt", "avaxusdt", "suiusdt", "dotusdt",
-        "daiusdt"],
-      "enabled": true
+      "symbols": [
+        "btcusdt","ethusdt","solusdt","hypeusdt","xagusdt","xauusdt","labusdt",
+        "zecusdt","reusdt","tnsrusdt","clusdt","xrpusdt","spcxusdt","wldusdt",
+        "skhynixusdt","btwusdt","synusdt","ubusdt","bicousdt","bnbusdt","muusdt",
+        "resolvusdt","dogeusdt","soxlusdt","nearusdt","sndkusdt","bzusdt",
+        "intcusdt","trumpusdt","enausdt","adausdt","taousdt","1000pepeusdt",
+        "suiusdt","idusdt","dramusdt","allousdt","avaxusdt","mrvlusdt","xlmusdt",
+        "qqqusdt","filusdt","eigenusdt","linkusdt","uniusdt","ltcusdt","clousdt",
+        "belusdt","husdt","pumpusdt"
+      ],
+      "enabled": true,
+      "collectLiquidations": true
     }
   ],
   "database": {
@@ -14,16 +22,14 @@
     "port": 5432,
     "database": "trade_collector",
     "username": "trade_user",
-    "password": null,
     "batchSize": 5000,
     "flushIntervalMs": 500
   },
   "processor": {
     "batchSize": 5000,
     "flushIntervalMs": 500,
-    "windowSize": 10000,
-    "slideStep": 1000,
-    "filterPercentile": 0.98,
+    "whaleWindowSize": 10000,
+    "whalePercentile": 0.98,
     "timeframes": ["1m", "15m"]
   },
   "export": {

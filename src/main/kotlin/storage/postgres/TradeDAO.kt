@@ -2,9 +2,11 @@ package com.aandios.storage.postgres
 
 import com.aandios.config.DatabaseConfig
 import com.aandios.model.*
+import com.aandios.model.LiquidationOrder
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import mu.KotlinLogging
+import java.math.BigDecimal
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -112,6 +114,29 @@ class TradeDAO(
             stmt.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_${tableName("filtered_trades", symbol)}_uniq ON ${tableName("filtered_trades", symbol)} (timestamp, price, quantity, is_buy)")
 
             stmt.execute("""
+                CREATE TABLE IF NOT EXISTS ${tableName("liquidations", symbol)} (
+                    timestamp   BIGINT NOT NULL,
+                    price       DECIMAL(20,8) NOT NULL,
+                    quantity    DECIMAL(30,8) NOT NULL,
+                    is_long     BOOLEAN NOT NULL,
+                    order_type  VARCHAR(10),
+                    PRIMARY KEY (timestamp, price, quantity)
+                )
+            """)
+
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS ${tableName("liquidation_aggregates", symbol)} (
+                    start_time        BIGINT NOT NULL,
+                    end_time          BIGINT NOT NULL,
+                    long_count        INT DEFAULT 0,
+                    long_volume       DECIMAL(30,8) DEFAULT 0,
+                    short_count       INT DEFAULT 0,
+                    short_volume      DECIMAL(30,8) DEFAULT 0,
+                    PRIMARY KEY (start_time)
+                )
+            """)
+
+            stmt.execute("""
                 CREATE TABLE IF NOT EXISTS ${tableName("volume_windows", symbol)} (
                     id                UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
                     exchange          VARCHAR(20) NOT NULL,
@@ -134,92 +159,6 @@ class TradeDAO(
                     UNIQUE (exchange, symbol, start_time, end_time)
                 )
             """)
-        }
-    }
-
-    // ========== RAW TRADES ==========
-
-    fun insertRawTradesBatch(trades: List<Trade>) {
-        if (trades.isEmpty()) return
-        val symbol = trades.first().symbol
-        ensureTables(symbol)
-
-        dataSource.connection.use { conn ->
-            conn.autoCommit = false
-            conn.prepareStatement("""
-                INSERT INTO ${tableName("raw_trades", symbol)} 
-                (exchange, symbol, timestamp, price, quantity, is_buy)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """).use { stmt ->
-                trades.forEach { trade ->
-                    stmt.setString(1, trade.exchange)
-                    stmt.setString(2, trade.symbol)
-                    stmt.setLong(3, trade.timestamp)
-                    stmt.setBigDecimal(4, trade.price)
-                    stmt.setBigDecimal(5, trade.quantity)
-                    stmt.setBoolean(6, trade.isBuy)
-                    stmt.addBatch()
-                }
-                stmt.executeBatch()
-                conn.commit()
-            }
-        }
-    }
-
-    fun getRecentRawTrades(
-        exchange: String,
-        symbol: String,
-        limit: Int = 1000000
-    ): List<Trade> {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                SELECT exchange, symbol, timestamp, price, quantity, is_buy
-                FROM ${tableName("raw_trades", symbol)} 
-                WHERE exchange = ? AND symbol = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """).use { stmt ->
-                stmt.setString(1, exchange)
-                stmt.setString(2, symbol)
-                stmt.setInt(3, limit)
-                val rs = stmt.executeQuery()
-                val trades = mutableListOf<Trade>()
-                while (rs.next()) {
-                    trades.add(Trade.fromRaw(
-                        exchange = rs.getString("exchange"),
-                        symbol = rs.getString("symbol"),
-                        timestamp = rs.getLong("timestamp"),
-                        price = rs.getBigDecimal("price"),
-                        quantity = rs.getBigDecimal("quantity"),
-                        isBuy = rs.getBoolean("is_buy")
-                    ))
-                }
-                trades.reversed()
-            }
-        }
-    }
-
-    fun cleanupOldRawTrades(symbol: String, maxRows: Long = 10_000): Int {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            val stmt = conn.createStatement()
-            val rs = stmt.executeQuery("""
-                WITH cnt AS (SELECT COUNT(*) as total FROM ${tableName("raw_trades", symbol)})
-                SELECT total FROM cnt WHERE total > $maxRows
-            """)
-            if (!rs.next()) return 0
-            val total = rs.getLong("total")
-            val toDelete = total - maxRows
-            stmt.execute("""
-                DELETE FROM ${tableName("raw_trades", symbol)}
-                WHERE id IN (
-                    SELECT id FROM ${tableName("raw_trades", symbol)}
-                    ORDER BY timestamp ASC LIMIT $toDelete
-                )
-            """)
-            stmt.executeQuery("SELECT $toDelete").use { it.next() }
-            toDelete.toInt()
         }
     }
 
@@ -333,32 +272,81 @@ class TradeDAO(
         }
     }
 
-    // ========== VOLUME WINDOWS ==========
+    // ========== RAW TRADES & VOLUME WINDOWS ==========
+
+    fun insertRawTradesBatch(trades: List<Trade>) {
+        if (trades.isEmpty()) return
+        val symbol = trades.first().symbol
+        ensureTables(symbol)
+
+        dataSource.connection.use { conn ->
+            conn.autoCommit = false
+            conn.prepareStatement("""
+                INSERT INTO ${tableName("raw_trades", symbol)} 
+                (exchange, symbol, timestamp, price, quantity, is_buy)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """).use { stmt ->
+                trades.forEach { trade ->
+                    stmt.setString(1, trade.exchange)
+                    stmt.setString(2, trade.symbol)
+                    stmt.setLong(3, trade.timestamp)
+                    stmt.setBigDecimal(4, trade.price)
+                    stmt.setBigDecimal(5, trade.quantity)
+                    stmt.setBoolean(6, trade.isBuy)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+                conn.commit()
+            }
+        }
+    }
+
+    fun getRecentRawTrades(
+        exchange: String,
+        symbol: String,
+        limit: Int = 1000000
+    ): List<Trade> {
+        ensureTables(symbol)
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT exchange, symbol, timestamp, price, quantity, is_buy
+                FROM ${tableName("raw_trades", symbol)} 
+                WHERE exchange = ? AND symbol = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """).use { stmt ->
+                stmt.setString(1, exchange)
+                stmt.setString(2, symbol)
+                stmt.setInt(3, limit)
+                val rs = stmt.executeQuery()
+                val trades = mutableListOf<Trade>()
+                while (rs.next()) {
+                    trades.add(Trade(
+                        exchange = rs.getString("exchange"),
+                        symbol = rs.getString("symbol"),
+                        timestamp = rs.getLong("timestamp"),
+                        price = rs.getBigDecimal("price"),
+                        quantity = rs.getBigDecimal("quantity"),
+                        isBuy = rs.getBoolean("is_buy")
+                    ))
+                }
+                trades.reversed()
+            }
+        }
+    }
 
     fun saveVolumeWindow(window: VolumeWindow) {
         ensureTables(window.symbol)
+        val tbl = tableName("volume_windows", window.symbol)
         dataSource.connection.use { conn ->
             conn.prepareStatement("""
-                INSERT INTO ${tableName("volume_windows", window.symbol)}
+                INSERT INTO $tbl 
                 (exchange, symbol, start_time, end_time, total_trades,
                  min_volume, max_volume, avg_volume, median_volume, stddev_volume,
                  p50_volume, p95_volume, p98_volume, p99_volume,
                  filter_percentile, filter_threshold)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (exchange, symbol, start_time, end_time) 
-                DO UPDATE SET
-                    total_trades = EXCLUDED.total_trades,
-                    min_volume = EXCLUDED.min_volume,
-                    max_volume = EXCLUDED.max_volume,
-                    avg_volume = EXCLUDED.avg_volume,
-                    median_volume = EXCLUDED.median_volume,
-                    stddev_volume = EXCLUDED.stddev_volume,
-                    p50_volume = EXCLUDED.p50_volume,
-                    p95_volume = EXCLUDED.p95_volume,
-                    p98_volume = EXCLUDED.p98_volume,
-                    p99_volume = EXCLUDED.p99_volume,
-                    filter_percentile = EXCLUDED.filter_percentile,
-                    filter_threshold = EXCLUDED.filter_threshold
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (exchange, symbol, start_time, end_time) DO NOTHING
             """).use { stmt ->
                 stmt.setString(1, window.exchange)
                 stmt.setString(2, window.symbol)
@@ -376,23 +364,125 @@ class TradeDAO(
                 stmt.setBigDecimal(14, window.p99Volume)
                 stmt.setDouble(15, window.filterPercentile)
                 stmt.setBigDecimal(16, window.filterThreshold)
-                stmt.execute()
+                stmt.executeUpdate()
             }
         }
     }
 
-    /** Delete volume_windows and filtered_trades older than retentionMs */
+    fun cleanupOldRawTrades(symbol: String, maxRows: Int) {
+        val tbl = tableName("raw_trades", symbol)
+        dataSource.connection.use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("DELETE FROM $tbl WHERE id NOT IN (SELECT id FROM $tbl ORDER BY id DESC LIMIT $maxRows)")
+                val deleted = stmt.updateCount
+                if (deleted > 0) log.debug { "Cleanup raw_trades $symbol: $deleted rows" }
+            }
+        }
+    }
+
+    // ========== LIQUIDATIONS ==========
+
+    fun insertLiquidationsBatch(symbol: String, orders: List<LiquidationOrder>) {
+        if (orders.isEmpty()) return
+        ensureTables(symbol)
+        dataSource.connection.use { conn ->
+            conn.autoCommit = false
+            conn.prepareStatement("""
+                INSERT INTO liquidations_${symbol.lowercase()} 
+                (timestamp, price, quantity, is_long, order_type)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (timestamp, price, quantity) DO NOTHING
+            """).use { stmt ->
+                orders.forEach { o ->
+                    stmt.setLong(1, o.timestamp)
+                    stmt.setBigDecimal(2, o.price)
+                    stmt.setBigDecimal(3, o.quantity)
+                    stmt.setBoolean(4, o.isLong)
+                    stmt.setString(5, o.orderType)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+                conn.commit()
+            }
+        }
+    }
+
+    fun saveLiquidationAggregate(symbol: String, startTime: Long, orders: List<LiquidationOrder>) {
+        if (orders.isEmpty()) return
+        ensureTables(symbol)
+        val endTime = startTime + 60_000
+        var longCount = 0L; var longVol = BigDecimal.ZERO
+        var shortCount = 0L; var shortVol = BigDecimal.ZERO
+
+        orders.forEach { o ->
+            if (o.isLong) { longCount++; longVol += o.quantity }
+            else { shortCount++; shortVol += o.quantity }
+        }
+
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                INSERT INTO liquidation_aggregates_${symbol.lowercase()} 
+                (start_time, end_time, long_count, long_volume, short_count, short_volume)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (start_time) DO UPDATE SET
+                    long_count = liquidation_aggregates_${symbol.lowercase()}.long_count + EXCLUDED.long_count,
+                    long_volume = liquidation_aggregates_${symbol.lowercase()}.long_volume + EXCLUDED.long_volume,
+                    short_count = liquidation_aggregates_${symbol.lowercase()}.short_count + EXCLUDED.short_count,
+                    short_volume = liquidation_aggregates_${symbol.lowercase()}.short_volume + EXCLUDED.short_volume
+            """).use { stmt ->
+                stmt.setLong(1, startTime)
+                stmt.setLong(2, endTime)
+                stmt.setInt(3, longCount.toInt())
+                stmt.setBigDecimal(4, longVol)
+                stmt.setInt(5, shortCount.toInt())
+                stmt.setBigDecimal(6, shortVol)
+                stmt.executeUpdate()
+            }
+        }
+    }
+
+    fun insertFilteredWhaleTrades(batch: List<FilteredTrade>) {
+        if (batch.isEmpty()) return
+        val symbol = batch.first().trade.symbol
+        ensureTables(symbol)
+        dataSource.connection.use { conn ->
+            conn.autoCommit = false
+            conn.prepareStatement("""
+                INSERT INTO filtered_trades_${symbol.lowercase()} 
+                (exchange, symbol, timestamp, price, quantity, is_buy,
+                 volume_usd, percentile_threshold, volume_threshold, trade_category,
+                 window_start_time, window_end_time, window_total_trades)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (timestamp, price, quantity, is_buy) DO NOTHING
+            """).use { stmt ->
+                batch.forEach { ft ->
+                    stmt.setString(1, ft.trade.exchange)
+                    stmt.setString(2, ft.trade.symbol)
+                    stmt.setLong(3, ft.trade.timestamp)
+                    stmt.setBigDecimal(4, ft.trade.price)
+                    stmt.setBigDecimal(5, ft.trade.quantity)
+                    stmt.setBoolean(6, ft.trade.isBuy)
+                    stmt.setBigDecimal(7, ft.volumeUsd)
+                    stmt.setDouble(8, ft.percentileThreshold)
+                    stmt.setBigDecimal(9, ft.volumeThreshold)
+                    stmt.setString(10, ft.tradeCategory?.name)
+                    stmt.setLong(11, ft.windowStartTime)
+                    stmt.setLong(12, ft.windowEndTime)
+                    stmt.setInt(13, ft.windowTotalTrades)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch()
+                conn.commit()
+            }
+        }
+    }
+
+    /** Delete filtered_trades and aggregates older than retentionMs */
     fun cleanupOldDerivedData(symbol: String, retentionMs: Long = 86_400_000L) {
         ensureTables(symbol)
         val cutoff = System.currentTimeMillis() - retentionMs
         dataSource.connection.use { conn ->
             val stmt = conn.createStatement()
-
-            // Volume windows: keep last 24h
-            val vwDeleted = stmt.executeUpdate("""
-                DELETE FROM ${tableName("volume_windows", symbol)}
-                WHERE end_time < $cutoff
-            """)
 
             // Filtered trades: keep last 24h
             val ftDeleted = stmt.executeUpdate("""
@@ -400,8 +490,36 @@ class TradeDAO(
                 WHERE timestamp < $cutoff
             """)
 
-            if (vwDeleted > 0 || ftDeleted > 0) {
-                log.info { "Cleanup $symbol: $vwDeleted volume_windows, $ftDeleted filtered_trades" }
+            // Aggregates: keep last 24h
+            val aggDeleted = stmt.executeUpdate("""
+                DELETE FROM ${tableName("aggregates", symbol)}
+                WHERE end_time < $cutoff
+            """)
+
+            if (ftDeleted > 0 || aggDeleted > 0) {
+                log.info { "Cleanup $symbol: $ftDeleted filtered_trades, $aggDeleted aggregates" }
+            }
+
+            // Also clean volume_windows
+            val vwTbl = tableName("volume_windows", symbol)
+            try {
+                conn.prepareStatement("DELETE FROM $vwTbl WHERE end_time < ?").use { vwStmt ->
+                    vwStmt.setLong(1, cutoff)
+                    val deleted = vwStmt.executeUpdate()
+                    if (deleted > 0) log.info { "Cleanup $symbol: $deleted volume_windows" }
+                }
+            } catch (_: Exception) { /* table might not exist yet */ }
+        }
+    }
+
+    fun cleanupOldLiquidations(symbol: String, retentionMs: Long) {
+        // Delete raw liquidations older than retentionMs from current time
+        val cutoff = System.currentTimeMillis() - retentionMs
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("DELETE FROM liquidations_${symbol.lowercase()} WHERE timestamp < ?").use { stmt ->
+                stmt.setLong(1, cutoff)
+                val deleted = stmt.executeUpdate()
+                if (deleted > 0) log.debug { "Cleanup liquidations $symbol: $deleted rows" }
             }
         }
     }

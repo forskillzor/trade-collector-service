@@ -16,6 +16,7 @@ class TradeCollectorService(
     private val exchangeClients = mutableListOf<ExchangeClient>()
     private var tradeProcessor: TradeProcessor? = null
     private var batchScheduler: BatchScheduler? = null
+    private var liquidationProcessor: LiquidationProcessor? = null
     private var monitoringServer: MonitoringServer? = null
     private var serviceJob: Job? = null
     private var coroutineScope: CoroutineScope? = null
@@ -31,27 +32,34 @@ class TradeCollectorService(
 
             coroutineScope = CoroutineScope(Dispatchers.Default)
 
+            // In-memory buffer (только для liquidations)
+            val minuteBuffer = MinuteBuffer()
+
+            // Liquidation processor
+            val collectLiq = config.exchanges.any { it.collectLiquidations }
+            liquidationProcessor = LiquidationProcessor(minuteBuffer, collectLiq)
+
             val dataDir = config.export.outputDir + "/buffer"
             val diskBuffer = DiskBuffer(dataDir)
             val deadLetterQueue = DeadLetterQueue(dataDir)
 
-            // Инициализация процессора
+            // Trade processor (trades → raw_trades DB, как раньше)
             tradeProcessor = TradeProcessor(dao, config.processor, diskBuffer, deadLetterQueue)
             tradeProcessor!!.initialize(coroutineScope!!)
 
             // Создание клиентов для бирж
             config.exchanges.filter { it.enabled }.forEach { exchangeConfig ->
-                val client = ExchangeClient(exchangeConfig, tradeProcessor!!)
+                val client = ExchangeClient(exchangeConfig, tradeProcessor!!, liquidationProcessor)
                 exchangeClients.add(client)
             }
 
-            log.info { "Created ${exchangeClients.size} clients" }
+            log.info { "Created ${exchangeClients.size} clients, liquidations=$collectLiq" }
 
-            // Запуск BatchScheduler (обработка агрегатов и статистики раз в минуту)
+            // BatchScheduler v3: in-memory вместо raw_trades SQL
             val allSymbols = config.exchanges.flatMap { it.symbols }.map { it.uppercase() }.distinct()
-            batchScheduler = BatchScheduler(dao, allSymbols, config.processor)
+            batchScheduler = BatchScheduler(minuteBuffer, dao, allSymbols, config.processor)
             batchScheduler!!.start(coroutineScope!!)
-            log.info { "BatchScheduler started for ${allSymbols.size} symbols" }
+            log.info { "BatchScheduler v3 started for ${allSymbols.size} symbols" }
 
             // Запуск мониторинга
             if (config.monitoring.enableMetrics) {

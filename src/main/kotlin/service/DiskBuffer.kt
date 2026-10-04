@@ -66,8 +66,8 @@ class DiskBuffer(private val dataDir: String) {
             }
 
             if (trades.isNotEmpty()) {
-                dao.insertRawTradesBatch(trades)
-                log.info { "DiskBuffer replayed ${trades.size} trades" }
+                // v3: raw_trades removed from DB — replayed trades discarded
+                log.info { "DiskBuffer replayed ${trades.size} trades (discarded, v3 in-memory)" }
             }
 
             bufferFile.delete()

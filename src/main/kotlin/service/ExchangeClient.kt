@@ -7,12 +7,14 @@ import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import mu.KotlinLogging
+import kotlin.time.Duration.Companion.seconds
 
 private val log = KotlinLogging.logger {}
 
 class ExchangeClient(
     private val config: ExchangeConfig,
-    private val processor: TradeProcessor
+    private val processor: TradeProcessor,
+    private val liquidationProcessor: LiquidationProcessor? = null
 ) {
     private val adapter = ExchangeAdapterFactory.createAdapter(config.name)
     private val clients = mutableMapOf<String, HttpClient>()
@@ -32,11 +34,16 @@ class ExchangeClient(
     }
 
     private suspend fun launchCombinedStream() {
-        val url = adapter.getCombinedStreamUrl(config.symbols)
+        val url = if (config.collectLiquidations) {
+            adapter.getCombinedStreamUrlWithLiq(config.symbols, true)
+        } else {
+            adapter.getCombinedStreamUrl(config.symbols)
+        }
 
         val client = HttpClient {
             install(WebSockets) {
                 maxFrameSize = Long.MAX_VALUE
+                pingInterval = 30.seconds
             }
         }
 
@@ -52,6 +59,7 @@ class ExchangeClient(
     private suspend fun connectAndListenCombined(url: String, client: HttpClient) {
         var reconnectAttempts = 0
         val maxReconnectDelay = 30000L
+        val silenceTimeoutMs = 120_000L
         var frameCount = 0
 
         while (true) {
@@ -64,14 +72,21 @@ class ExchangeClient(
                     reconnectAttempts = 0
                     frameCount = 0
 
-                    // Diagnostic: warn if no frames after 10 seconds
-                    val diagJob = launch {
-                        delay(10_000)
-                        if (frameCount == 0) log.warn { "${config.name}: NO frames after 10s — WebSocket might be silent" }
+                    var lastFrameTime = System.currentTimeMillis()
+
+                    // Watchdog: force reconnect if no frames for silenceTimeoutMs
+                    val watchdog = launch {
+                        while (isActive) {
+                            delay(10_000)
+                            if (System.currentTimeMillis() - lastFrameTime > silenceTimeoutMs) {
+                                log.warn { "${config.name}: combined NO frames for ${silenceTimeoutMs / 1000}s — forcing reconnect" }
+                                this@webSocket.cancel("Combined stream silence timeout")
+                            }
+                        }
                     }
 
                     for (frame in incoming) {
-                        diagJob.cancel()
+                        lastFrameTime = System.currentTimeMillis()
                         when (frame) {
                             is Frame.Text -> {
                                 frameCount++
@@ -84,6 +99,15 @@ class ExchangeClient(
                                 }
                                 val (symbol, node) = parsed
 
+                                if (adapter.isLiquidationMessageNode(node)) {
+                                    val liquidation = adapter.parseLiquidationNode(node, symbol)
+                                    if (liquidation != null) {
+                                        if (frameCount <= 5) log.debug { "${config.name}: LIQUIDATION #$frameCount $symbol" }
+                                        liquidationProcessor?.process(liquidation)
+                                    }
+                                    continue
+                                }
+
                                 if (!adapter.isTradeMessageNode(node)) {
                                     if (frameCount <= 5) log.debug { "${config.name}: NON-TRADE #$frameCount $symbol" }
                                     continue
@@ -93,29 +117,19 @@ class ExchangeClient(
 
                                 processor.process(node.toString(), config.name, symbol)
                             }
-                            is Frame.Binary -> {
-                                if (frameCount <= 5) log.debug { "${config.name}: BINARY frame" }
-                            }
-                            is Frame.Ping -> {
-                                if (frameCount <= 5) log.debug { "${config.name}: PING frame" }
-                            }
-                            is Frame.Pong -> {
-                                if (frameCount <= 5) log.debug { "${config.name}: PONG frame" }
-                            }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
                                 log.info { "${config.name}: combined connection closed ($reason)" }
                                 break
                             }
-                            else -> {
-                                log.debug { "${config.name}: unknown frame type: ${frame::class.simpleName}" }
-                            }
+                            else -> {}
                         }
                     }
+                    watchdog.cancel()
                 }
             } catch (e: Exception) {
                 val delayMs = calculateReconnectDelay(reconnectAttempts, maxReconnectDelay)
-                log.warn { "${config.name}: combined error, reconnecting in ${delayMs / 1000}s" }
+                log.warn { "${config.name}: combined error (${e.message}), reconnecting in ${delayMs / 1000}s" }
                 delay(delayMs)
             }
         }
@@ -127,6 +141,7 @@ class ExchangeClient(
         val client = HttpClient {
             install(WebSockets) {
                 maxFrameSize = Long.MAX_VALUE
+                pingInterval = 30.seconds
             }
         }
 
@@ -162,7 +177,7 @@ class ExchangeClient(
                             delay(10_000)
                             if (System.currentTimeMillis() - lastTradeTime > silenceTimeoutMs) {
                                 log.warn { "${config.name}/$symbol: NO trades for ${silenceTimeoutMs / 1000}s — forcing reconnect" }
-                                cancel("Trade silence timeout")
+                                this@webSocket.cancel("Trade silence timeout")
                             }
                         }
                     }
@@ -182,6 +197,8 @@ class ExchangeClient(
                                 lastTradeTime = System.currentTimeMillis()
                                 processor.process(text, config.name, symbol)
                             }
+                            is Frame.Ping -> { lastTradeTime = System.currentTimeMillis() }
+                            is Frame.Pong -> { lastTradeTime = System.currentTimeMillis() }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
                                 log.info { "${config.name}/$symbol: connection closed ($reason)" }

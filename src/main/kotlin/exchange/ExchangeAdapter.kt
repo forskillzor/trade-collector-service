@@ -1,5 +1,6 @@
 package com.aandios.exchange
 
+import com.aandios.model.LiquidationOrder
 import com.aandios.model.Trade
 import com.fasterxml.jackson.databind.JsonNode
 
@@ -16,4 +17,10 @@ interface ExchangeAdapter {
     fun parseCombinedFrame(json: String): Pair<String, JsonNode>? = null
     fun isTradeMessageNode(node: JsonNode): Boolean = isTradeMessage(node.toString())
     fun parseTradeNode(node: JsonNode, symbol: String): Trade? = parseTrade(node.toString(), symbol)
+
+    fun getLiquidationStreamSuffix(): String = ""
+    fun getCombinedStreamUrlWithLiq(symbols: List<String>, includeLiquidations: Boolean): String =
+        getCombinedStreamUrl(symbols)
+    fun isLiquidationMessageNode(node: JsonNode): Boolean = false
+    fun parseLiquidationNode(node: JsonNode, symbol: String): LiquidationOrder? = null
 }
