@@ -1,5 +1,7 @@
 # Trade Collector
 
+[![License](https://img.shields.io/badge/License-AGPL%203.0--or--later-blue.svg)](LICENSE)
+
 Сервис сбора и агрегации трейдов с криптобирж (Binance, Bybit) в реальном времени.
 Сохраняет сырые сделки, строит price-level агрегаты (footprint-свечи), вычисляет статистику объёмов и обнаруживает аномально крупные сделки.
 
@@ -112,3 +114,31 @@ trade-collector/
 | `make package VERSION=v0.1.0` | Собрать архив для деплоя |
 | `make deploy` | Собрать и задеплоить на VPS |
 | `make db-reset` | Сбросить локальную БД |
+
+## License
+
+Trade Collector is free and open-source software licensed under the
+**GNU Affero General Public License, version 3.0 or later (AGPL-3.0-or-later)**.
+
+The full license text is available in the [LICENSE](LICENSE) file.
+
+All source files carry the following notice:
+
+```text
+Copyright (C) 2026 Sergey Orlov
+SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+### Commercial license
+
+AGPL-3.0 is a copyleft license: if you run a modified version of this software as a
+network service, you must make your modifications available to its users under the same
+license. If these obligations do not fit your business model, a **commercial license**
+is available that removes them. Contact: <formyfrontend@gmail.com>.
+
+### Contributions
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for build
+instructions and the contribution workflow. By submitting a pull request, you
+agree to the terms of the individual [Contributor License Agreement](CLA.md)
+(CLA).

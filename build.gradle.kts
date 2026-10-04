@@ -1,3 +1,8 @@
+/*
+ * Copyright (C) 2026 Sergey Orlov
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 plugins {
     kotlin("jvm") version "2.2.20"  // ✅ Исправить на 1.9.0
     kotlin("plugin.serialization") version "2.2.20"  // ✅ Та же версия
