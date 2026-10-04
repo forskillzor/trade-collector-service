@@ -42,6 +42,12 @@ class BatchScheduler(
         log.info { "BatchScheduler started" }
 
         job = scope.launch {
+            // Пересборка 15m за последние 24ч: перезаписывает пустые агрегаты,
+            // созданные сломанным парсером jsonb (водяной знак при этом свежий,
+            // обычный catch-up их не трогает).
+            val now = System.currentTimeMillis()
+            symbols.forEach { symbol -> rebuildRecent15m(symbol, now) }
+
             while (isActive) {
                 try {
                     tick()
@@ -51,6 +57,22 @@ class BatchScheduler(
                 delay(1000) // проверка раз в секунду
             }
         }
+    }
+
+    /**
+     * Пересобирает 15m-бакеты за последние [REBUILD_15M_WINDOW_MS] из 1m-агрегатов.
+     */
+    private fun rebuildRecent15m(symbol: String, now: Long) {
+        val currentBucket = now / 900_000 * 900_000
+        val fromBucket = currentBucket - REBUILD_15M_WINDOW_MS
+        var b = fromBucket
+        var count = 0
+        while (b < currentBucket) {
+            build15mAggregate(symbol, b + 900_000)
+            b += 900_000
+            count++
+        }
+        if (count > 0) log.info { "15m rebuild $symbol: $count buckets" }
     }
 
     fun stop() {
@@ -257,25 +279,8 @@ class BatchScheduler(
         }
     }
 
-    private fun parsePriceLevelsJson(json: String): List<PriceLevelData> {
-        if (json == "[]" || json.isBlank()) return emptyList()
-        return json.removeSurrounding("[", "]")
-            .split("],[")
-            .mapNotNull { block ->
-                val clean = block.trim('[', ']')
-                val parts = clean.split(",")
-                if (parts.size < 5) return@mapNotNull null
-                try {
-                    PriceLevelData(
-                        price = BigDecimal(parts[0]),
-                        bidVolume = BigDecimal(parts[1]),
-                        askVolume = BigDecimal(parts[2]),
-                        bidCount = parts[3].toInt(),
-                        askCount = parts[4].toInt()
-                    )
-                } catch (e: Exception) { null }
-            }
-    }
+    private fun parsePriceLevelsJson(json: String): List<PriceLevelData> =
+        PriceLevelsJson.parse(json)
 
     private fun recalculateVolumeStats(symbol: String, trades: List<Trade>, windowStart: Long, windowEnd: Long) {
         if (trades.isEmpty()) return
@@ -383,22 +388,8 @@ class BatchScheduler(
         }
     }
 
-    private fun buildPriceLevelsJson(levels: List<PriceLevelData>): String {
-        if (levels.isEmpty()) return "[]"
-        val sb = StringBuilder("[")
-        levels.forEachIndexed { i, level ->
-            if (i > 0) sb.append(',')
-            sb.append("[")
-            sb.append(level.price.toPlainString()).append(',')
-            sb.append(level.bidVolume.toPlainString()).append(',')
-            sb.append(level.askVolume.toPlainString()).append(',')
-            sb.append(level.bidCount).append(',')
-            sb.append(level.askCount)
-            sb.append(']')
-        }
-        sb.append(']')
-        return sb.toString()
-    }
+    private fun buildPriceLevelsJson(levels: List<PriceLevelData>): String =
+        PriceLevelsJson.build(levels)
 
     private fun formatTime(ms: Long): String {
         if (ms == 0L) return "none"
@@ -409,5 +400,6 @@ class BatchScheduler(
 
     companion object {
         private const val RETENTION_MS = 86_400_000L // 1 день
+        private const val REBUILD_15M_WINDOW_MS = 86_400_000L // пересборка 15m за сутки
     }
 }
