@@ -30,7 +30,7 @@
     "flushIntervalMs": 500,
     "whaleWindowSize": 10000,
     "whalePercentile": 0.98,
-    "timeframes": ["1m", "15m"]
+    "timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"]
   },
   "export": {
     "enabled": true,

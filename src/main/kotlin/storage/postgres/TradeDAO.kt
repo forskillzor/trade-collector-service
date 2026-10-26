@@ -243,19 +243,25 @@ class TradeDAO(
         }
     }
 
-    /** Load 1m aggregates for merging into higher timeframes */
-    fun get1mAggregates(symbol: String, start: Long, end: Long): List<AggregateCandle> {
+    /** Load aggregates of one timeframe for merging into a higher timeframe. */
+    fun getAggregates(
+        symbol: String,
+        timeframe: String,
+        start: Long,
+        end: Long
+    ): List<AggregateCandle> {
         ensureTables(symbol)
         return dataSource.connection.use { conn ->
             conn.prepareStatement("""
                 SELECT exchange, symbol, timeframe, start_time, end_time,
                        price_levels_jsonb, total_ticks, min_price, max_price, price_levels
                 FROM ${tableName("aggregates", symbol)}
-                WHERE timeframe = '1m' AND start_time >= ? AND start_time < ?
+                WHERE timeframe = ? AND start_time >= ? AND start_time < ?
                 ORDER BY start_time
             """).use { stmt ->
-                stmt.setLong(1, start)
-                stmt.setLong(2, end)
+                stmt.setString(1, timeframe)
+                stmt.setLong(2, start)
+                stmt.setLong(3, end)
                 val rs = stmt.executeQuery()
                 val results = mutableListOf<AggregateCandle>()
                 while (rs.next()) {
@@ -273,6 +279,37 @@ class TradeDAO(
                     ))
                 }
                 results
+            }
+        }
+    }
+
+    fun getAggregateWatermark(symbol: String, timeframe: String): Long {
+        ensureTables(symbol)
+        return dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                SELECT COALESCE(MAX(end_time), 0) AS watermark
+                FROM ${tableName("aggregates", symbol)}
+                WHERE timeframe = ?
+            """).use { stmt ->
+                stmt.setString(1, timeframe)
+                val rs = stmt.executeQuery()
+                if (rs.next()) rs.getLong("watermark") else 0L
+            }
+        }
+    }
+
+    fun cleanupOldAggregates(symbol: String, timeframe: String, retentionMs: Long) {
+        ensureTables(symbol)
+        val cutoff = System.currentTimeMillis() - retentionMs
+        dataSource.connection.use { conn ->
+            conn.prepareStatement("""
+                DELETE FROM ${tableName("aggregates", symbol)}
+                WHERE timeframe = ? AND end_time < ?
+            """).use { stmt ->
+                stmt.setString(1, timeframe)
+                stmt.setLong(2, cutoff)
+                val deleted = stmt.executeUpdate()
+                if (deleted > 0) log.info { "Cleanup $symbol $timeframe: $deleted aggregates" }
             }
         }
     }
@@ -482,27 +519,20 @@ class TradeDAO(
         }
     }
 
-    /** Delete filtered_trades and aggregates older than retentionMs */
+    /** Delete auxiliary derived data. Aggregates have separate per-timeframe retention. */
     fun cleanupOldDerivedData(symbol: String, retentionMs: Long = 86_400_000L) {
         ensureTables(symbol)
         val cutoff = System.currentTimeMillis() - retentionMs
         dataSource.connection.use { conn ->
             val stmt = conn.createStatement()
 
-            // Filtered trades: keep last 24h
             val ftDeleted = stmt.executeUpdate("""
                 DELETE FROM ${tableName("filtered_trades", symbol)}
                 WHERE timestamp < $cutoff
             """)
 
-            // Aggregates: keep last 24h
-            val aggDeleted = stmt.executeUpdate("""
-                DELETE FROM ${tableName("aggregates", symbol)}
-                WHERE end_time < $cutoff
-            """)
-
-            if (ftDeleted > 0 || aggDeleted > 0) {
-                log.info { "Cleanup $symbol: $ftDeleted filtered_trades, $aggDeleted aggregates" }
+            if (ftDeleted > 0) {
+                log.info { "Cleanup $symbol: $ftDeleted filtered_trades" }
             }
 
             // Also clean volume_windows

@@ -56,7 +56,7 @@ data class ProcessorConfig(
     val flushIntervalMs: Long = 1000,
     val whaleWindowSize: Int = 10000,
     val whalePercentile: Double = 0.98,
-    val timeframes: List<String> = listOf("1m", "15m")
+    val timeframes: List<String> = listOf("1m", "5m", "15m", "1h", "4h", "1d")
 )
 
 @Serializable

@@ -60,11 +60,18 @@ class TradeCollectorService(
 
             log.info { "Created ${exchangeClients.size} clients, liquidations=$collectLiq" }
 
-            // BatchScheduler v3: in-memory вместо raw_trades SQL
+            // BatchScheduler: raw_trades → 1m, затем лестница таймфреймов
             val allSymbols = config.exchanges.flatMap { it.symbols }.map { it.uppercase() }.distinct()
-            batchScheduler = BatchScheduler(minuteBuffer, dao, allSymbols, config.processor)
+            val exchangeName = config.exchanges.firstOrNull { it.enabled }?.name ?: "Binance"
+            batchScheduler = BatchScheduler(
+                minuteBuffer,
+                dao,
+                allSymbols,
+                config.processor,
+                exchangeName
+            )
             batchScheduler!!.start(coroutineScope!!)
-            log.info { "BatchScheduler v3 started for ${allSymbols.size} symbols" }
+            log.info { "BatchScheduler started for ${allSymbols.size} symbols on $exchangeName" }
 
             // Запуск мониторинга
             if (config.monitoring.enableMetrics) {

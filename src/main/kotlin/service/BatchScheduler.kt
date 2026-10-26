@@ -12,178 +12,220 @@ import kotlin.math.sqrt
 private val log = KotlinLogging.logger {}
 
 /**
- * Batch-обработчик: каждую секунду проверяет наступление минутных границ.
+ * Строит footprint-агрегаты лестницы из raw_trades и сохраняет их в БД.
  *
- * Трейды читаются из raw_trades в БД — на их основе строятся 1m/15m footprint-агрегаты
- * и volume-статистика (t-Digest, перцентили, китовые сделки).
- *
- * Ликвидации и потоковые китовые сделки берутся из in-memory MinuteBuffer.
+ * 1m строится из сырых сделок, остальные таймфреймы — из ближайшего
+ * меньшего таймфрейма. В БД сохраняются только закрытые бакеты.
  */
 class BatchScheduler(
     private val buffer: MinuteBuffer,
     private val dao: TradeDAO,
     private val symbols: List<String>,
-    private val config: ProcessorConfig
+    private val config: ProcessorConfig,
+    private val exchange: String = "Binance"
 ) {
-    private val watermarks = mutableMapOf<String, Long>() // "symbol_timeframe" → lastProcessedEndTime
+    private val timeframes: List<Timeframe> =
+        Timeframe.parse(config.timeframes).ifEmpty { Timeframe.ordered }
+    private val watermarks = mutableMapOf<String, Long>()
+    private val retryAfter = mutableMapOf<String, Long>()
     private var job: Job? = null
-    private var last15mProcessed = 0L
+    private var lastCleanupAt = 0L
 
     fun start(scope: CoroutineScope) {
-        // Восстановить водяные знаки из существующих агрегатов
         symbols.forEach { symbol ->
-            listOf("1m", "15m").forEach { tf ->
-                val wm = getWatermark(symbol, tf)
-                watermarks["${symbol}_$tf"] = wm
-                log.info { "Batch watermark $symbol/$tf = ${if (wm <= 0) "start" else formatTime(wm)}" }
+            timeframes.forEach { timeframe ->
+                val watermark = try {
+                    dao.getAggregateWatermark(symbol, timeframe.code)
+                } catch (e: Exception) {
+                    log.warn(e) { "Failed to load ${symbol}/${timeframe.code} watermark" }
+                    0L
+                }
+                watermarks[key(symbol, timeframe)] = watermark
+                log.info {
+                    "Batch watermark $symbol/${timeframe.code} = " +
+                        if (watermark <= 0) "start" else formatTime(watermark)
+                }
             }
         }
-        last15mProcessed = System.currentTimeMillis() / 900_000 * 900_000
-        log.info { "BatchScheduler started" }
+        log.info { "BatchScheduler started timeframes=${timeframes.joinToString { it.code }}" }
 
         job = scope.launch {
-            // Пересборка 15m за последние 24ч: перезаписывает пустые агрегаты,
-            // созданные сломанным парсером jsonb (водяной знак при этом свежий,
-            // обычный catch-up их не трогает).
-            val now = System.currentTimeMillis()
-            symbols.forEach { symbol -> rebuildRecent15m(symbol, now) }
-
-            while (isActive) {
-                try {
-                    tick()
-                } catch (e: Exception) {
-                    log.error(e) { "Batch cycle error" }
+            try {
+                catchUpAll(System.currentTimeMillis())
+                while (isActive) {
+                    try {
+                        tick()
+                    } catch (e: Exception) {
+                        log.error(e) { "Batch cycle error" }
+                    }
+                    delay(1000)
                 }
-                delay(1000) // проверка раз в секунду
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error(e) { "BatchScheduler failed" }
             }
         }
-    }
-
-    /**
-     * Пересобирает 15m-бакеты за последние [REBUILD_15M_WINDOW_MS] из 1m-агрегатов.
-     */
-    private fun rebuildRecent15m(symbol: String, now: Long) {
-        val currentBucket = now / 900_000 * 900_000
-        val fromBucket = currentBucket - REBUILD_15M_WINDOW_MS
-        var b = fromBucket
-        var count = 0
-        while (b < currentBucket) {
-            build15mAggregate(symbol, b + 900_000)
-            b += 900_000
-            count++
-        }
-        if (count > 0) log.info { "15m rebuild $symbol: $count buckets" }
     }
 
     fun stop() {
         job?.cancel()
     }
 
-    private fun getWatermark(symbol: String, timeframe: String): Long {
-        return try {
-            dao.connection.use { conn ->
-                val tbl = "aggregates_${symbol.lowercase()}"
-                conn.prepareStatement(
-                    "SELECT COALESCE(MAX(end_time), -1) FROM $tbl WHERE timeframe = ?"
-                ).use { stmt ->
-                    stmt.setString(1, timeframe)
-                    val rs = stmt.executeQuery()
-                    if (rs.next()) rs.getLong(1) else -1L
+    private fun catchUpAll(now: Long) {
+        symbols.forEach { symbol ->
+            timeframes.forEach { timeframe ->
+                if (timeframe == Timeframe.M1) {
+                    process1m(symbol, now)
+                } else {
+                    catchUp(symbol, timeframe, now)
                 }
             }
-        } catch (e: Exception) {
-            -1L
         }
     }
 
     private fun tick() {
         val now = System.currentTimeMillis()
-        val currentMinute = now / 60_000 * 60_000
-        val current15m = now / 900_000 * 900_000
 
-        // Трейды: читаем из raw_trades в БД (watermarks + catch-up)
-        symbols.forEach { symbol -> processSymbol(symbol, currentMinute) }
+        symbols.forEach { symbol ->
+            timeframes.forEach { timeframe ->
+                if (timeframe == Timeframe.M1) {
+                    process1m(symbol, now)
+                } else {
+                    catchUp(symbol, timeframe, now)
+                }
+            }
+        }
 
-        // Ликвидации и китовые сделки: из in-memory MinuteBuffer
-        val liqData = buffer.flush()
-        processLiquidations(liqData.liquidations)
+        val liquidationData = buffer.flush()
+        processLiquidations(liquidationData.liquidations)
 
-        // 15m — на границе каждые 15 минут
-        if (current15m > last15mProcessed) {
-            symbols.forEach { symbol -> build15mAggregate(symbol, current15m) }
-            last15mProcessed = current15m
+        if (now - lastCleanupAt >= CLEANUP_INTERVAL_MS) {
+            symbols.forEach { symbol -> cleanupSymbol(symbol) }
+            lastCleanupAt = now
         }
     }
 
-    /**
-     * Строит агрегаты лестницы для символа: для каждого ТФ догоняем все
-     * пропущенные бакеты (после рестарта) мержем из source-таймфрейма.
-     */
-    private fun processSymbol(symbol: String, currentMinute: Long) {
-        val key = "${symbol}_1m"
-        var wm = watermarks[key] ?: (currentMinute - 60_000)
+    private fun process1m(symbol: String, now: Long) {
+        val key = key(symbol, Timeframe.M1)
+        val currentMinute = now / MINUTE_MS * MINUTE_MS
+        var watermark = watermarks[key] ?: 0L
+        if (watermark <= 0L) watermark = currentMinute - MINUTE_MS
 
-        // Если данных ещё нет (wm == -1), стартуем с минуты перед текущей
-        if (wm <= 0) wm = currentMinute - 60_000
-
-        // Догоняем пропущенные минуты (после рестарта или долгой паузы).
-        // Для промежуточных минут: только агрегаты, без volume-статистики.
-        while (wm < currentMinute) {
-            val start = wm
-            val end = start + 60_000
-            val isLastMinute = (end >= currentMinute) // только последняя минута — полная обработка
+        while (watermark < currentMinute) {
+            val start = watermark
+            val end = start + MINUTE_MS
+            if (now < end + FLUSH_GRACE_MS) break
 
             try {
                 val trades = getTradesInRange(symbol, start, end)
                 if (trades.isNotEmpty()) {
                     build1mAggregate(symbol, start, end, trades)
-
-                    // Volume-статистику считаем только на последней минуте
-                    if (isLastMinute) {
-                        val recentTrades = dao.getRecentRawTrades("Binance", symbol, 10_000)
+                    if (end == currentMinute) {
+                        val recentTrades = dao.getRecentRawTrades(exchange, symbol, 10_000)
                         if (recentTrades.isNotEmpty()) {
                             recalculateVolumeStats(symbol, recentTrades, start, end)
                         }
                     }
                 } else {
-                    // Пустая свеча — сохраняем для непрерывности
-                    saveEmptyAggregate(symbol, "1m", start, end)
+                    saveEmptyAggregate(symbol, Timeframe.M1, start, end)
                 }
-
-                // Чистим старые raw_trades и derived data только на последней минуте
-                if (isLastMinute) {
-                    dao.cleanupOldRawTrades(symbol, 10_000)
-                    dao.cleanupOldDerivedData(symbol, RETENTION_MS)
-                }
-
+                watermark = end
+                watermarks[key] = watermark
             } catch (e: Exception) {
-                log.warn(e) { "Batch failed for $symbol ${formatTime(start)}" }
+                log.warn(e) { "Batch 1m failed for $symbol ${formatTime(start)}" }
+                break
             }
+        }
+    }
 
-            wm = end
-            watermarks[key] = wm
+    private fun catchUp(symbol: String, timeframe: Timeframe, now: Long) {
+        val source = timeframe.source ?: return
+        val key = key(symbol, timeframe)
+        if (now < (retryAfter[key] ?: 0L)) return
+
+        val currentBucketStart = timeframe.bucketStart(now)
+        val watermark = watermarks[key] ?: 0L
+        if (watermark >= currentBucketStart) {
+            retryAfter.remove(key)
+            return
+        }
+
+        var cursor = if (watermark > 0L) {
+            watermark
+        } else {
+            timeframe.bucketStart(now - INITIAL_BACKFILL_MS)
+        }
+        cursor = timeframe.bucketStart(cursor)
+
+        var blocked = false
+        while (cursor + timeframe.durationMs <= currentBucketStart) {
+            val bucketStart = cursor
+            val bucketEnd = bucketStart + timeframe.durationMs
+            try {
+                val sourceBars = dao.getAggregates(symbol, source.code, bucketStart, bucketEnd)
+                val firstSourceStart = sourceBars.firstOrNull()?.startTime
+                if (sourceBars.size < timeframe.sourceBarCount) {
+                    if (firstSourceStart == null || firstSourceStart > bucketStart) {
+                        log.debug {
+                            "Skip ${symbol}/${timeframe.code} ${formatTime(bucketStart)}: " +
+                                "source ${source.code} starts later"
+                        }
+                        cursor = bucketEnd
+                        continue
+                    }
+                    blocked = true
+                    break
+                }
+                val aggregate = AggregateBuilder.build(timeframe, sourceBars, bucketStart)
+                if (aggregate == null) {
+                    blocked = true
+                    break
+                }
+                dao.saveAggregate(aggregate)
+                watermarks[key] = bucketEnd
+                cursor = bucketEnd
+                log.debug {
+                    "Batch aggregate $symbol ${timeframe.code} " +
+                        "from ${sourceBars.size}x${source.code} | ticks=${aggregate.totalTicks}"
+                }
+            } catch (e: Exception) {
+                log.warn(e) { "Batch ${timeframe.code} failed for $symbol ${formatTime(bucketStart)}" }
+                blocked = true
+                break
+            }
+        }
+
+        if (blocked) {
+            retryAfter[key] = now + retryDelay(timeframe)
+        } else {
+            watermarks[key] = cursor
+            retryAfter.remove(key)
         }
     }
 
     private fun getTradesInRange(symbol: String, start: Long, end: Long): List<Trade> {
-        val tbl = "raw_trades_${symbol.lowercase()}"
+        val table = "raw_trades_${symbol.lowercase()}"
         return dao.connection.use { conn ->
             conn.prepareStatement(
-                "SELECT timestamp, price, quantity, is_buy FROM $tbl WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp"
+                "SELECT exchange, timestamp, price, quantity, is_buy " +
+                    "FROM $table WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp"
             ).use { stmt ->
                 stmt.setLong(1, start)
                 stmt.setLong(2, end)
                 val rs = stmt.executeQuery()
                 val trades = mutableListOf<Trade>()
                 while (rs.next()) {
-                    trades.add(Trade(
-                        exchange = "Binance",
-                        symbol = symbol,
-                        timestamp = rs.getLong("timestamp"),
-                        price = rs.getBigDecimal("price"),
-                        quantity = rs.getBigDecimal("quantity"),
-                        isBuy = rs.getBoolean("is_buy")
-                    ))
+                    trades.add(
+                        Trade(
+                            exchange = rs.getString("exchange"),
+                            symbol = symbol,
+                            timestamp = rs.getLong("timestamp"),
+                            price = rs.getBigDecimal("price"),
+                            quantity = rs.getBigDecimal("quantity"),
+                            isBuy = rs.getBoolean("is_buy")
+                        )
+                    )
                 }
                 trades
             }
@@ -192,97 +234,84 @@ class BatchScheduler(
 
     private fun build1mAggregate(symbol: String, start: Long, end: Long, trades: List<Trade>) {
         val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
-
         var minPrice = BigDecimal.ZERO
         var maxPrice = BigDecimal.ZERO
 
         trades.forEach { trade ->
-            val p = trade.price
-            val q = trade.quantity
+            val price = trade.price
+            val quantity = trade.quantity
 
-            if (priceLevels.isEmpty()) { minPrice = p; maxPrice = p }
-            else { if (p < minPrice) minPrice = p; if (p > maxPrice) maxPrice = p }
+            if (priceLevels.isEmpty()) {
+                minPrice = price
+                maxPrice = price
+            } else {
+                if (price < minPrice) minPrice = price
+                if (price > maxPrice) maxPrice = price
+            }
 
-            val level = priceLevels.getOrPut(p) { PriceLevelData(p) }
-            if (trade.isBuy) { level.bidVolume = level.bidVolume.add(q); level.bidCount++ }
-            else { level.askVolume = level.askVolume.add(q); level.askCount++ }
+            val level = priceLevels.getOrPut(price) { PriceLevelData(price) }
+            if (trade.isBuy) {
+                level.bidVolume = level.bidVolume.add(quantity)
+                level.bidCount++
+            } else {
+                level.askVolume = level.askVolume.add(quantity)
+                level.askCount++
+            }
         }
 
-        val json = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price })
         val candle = AggregateCandle(
-            exchange = "Binance", symbol = symbol, timeframe = "1m",
-            startTime = start, endTime = end,
-            priceLevelsJson = json,
+            exchange = trades.firstOrNull()?.exchange ?: exchange,
+            symbol = symbol,
+            timeframe = Timeframe.M1.code,
+            startTime = start,
+            endTime = end,
+            priceLevelsJson = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price }),
             totalTicks = trades.size.toLong(),
-            minPrice = minPrice, maxPrice = maxPrice,
+            minPrice = minPrice,
+            maxPrice = maxPrice,
             priceLevels = priceLevels.size
         )
         dao.saveAggregate(candle)
         log.debug { "Batch aggregate $symbol 1m | ticks=${trades.size} levels=${priceLevels.size}" }
     }
 
-    private fun saveEmptyAggregate(symbol: String, timeframe: String, start: Long, end: Long) {
+    private fun saveEmptyAggregate(symbol: String, timeframe: Timeframe, start: Long, end: Long) {
         val candle = AggregateCandle(
-            exchange = "Binance", symbol = symbol, timeframe = timeframe,
-            startTime = start, endTime = end,
-            priceLevelsJson = "[]", totalTicks = 0,
-            minPrice = BigDecimal.ZERO, maxPrice = BigDecimal.ZERO,
+            exchange = exchange,
+            symbol = symbol,
+            timeframe = timeframe.code,
+            startTime = start,
+            endTime = end,
+            priceLevelsJson = "[]",
+            totalTicks = 0,
+            minPrice = BigDecimal.ZERO,
+            maxPrice = BigDecimal.ZERO,
             priceLevels = 0
         )
         dao.saveAggregate(candle)
     }
 
-    private fun build15mAggregate(symbol: String, current15m: Long) {
-        val start = current15m - 900_000
-        val end = current15m
-
+    private fun cleanupSymbol(symbol: String) {
         try {
-            // Мерджим существующие 1m-агрегаты вместо повторного чтения raw_trades
-            val qmAggregates = dao.get1mAggregates(symbol, start, end)
-            if (qmAggregates.isEmpty()) return
-
-            val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
-            var minPrice = BigDecimal.ZERO
-            var maxPrice = BigDecimal.ZERO
-            var totalTicks = 0L
-            var first = true
-
-            for (agg in qmAggregates) {
-                val levels = parsePriceLevelsJson(agg.priceLevelsJson)
-                for (level in levels) {
-                    val existing = priceLevels.getOrPut(level.price) { PriceLevelData(level.price) }
-                    existing.bidVolume = existing.bidVolume.add(level.bidVolume)
-                    existing.askVolume = existing.askVolume.add(level.askVolume)
-                    existing.bidCount += level.bidCount
-                    existing.askCount += level.askCount
-
-                    if (first) { minPrice = level.price; maxPrice = level.price; first = false }
-                    else { if (level.price < minPrice) minPrice = level.price; if (level.price > maxPrice) maxPrice = level.price }
-                }
-                totalTicks += agg.totalTicks
+            dao.cleanupOldRawTrades(symbol, 10_000)
+            dao.cleanupOldDerivedData(symbol, AUX_RETENTION_MS)
+            Timeframe.M1.retentionMs?.let {
+                dao.cleanupOldAggregates(symbol, Timeframe.M1.code, it)
             }
-
-            val json = buildPriceLevelsJson(priceLevels.values.sortedBy { it.price })
-            val candle = AggregateCandle(
-                exchange = "Binance", symbol = symbol, timeframe = "15m",
-                startTime = start, endTime = end,
-                priceLevelsJson = json,
-                totalTicks = totalTicks,
-                minPrice = minPrice, maxPrice = maxPrice,
-                priceLevels = priceLevels.size
-            )
-            dao.saveAggregate(candle)
-            log.debug { "Batch aggregate $symbol 15m (merged from ${qmAggregates.size}x1m) | ticks=$totalTicks levels=${priceLevels.size}" }
-            watermarks["${symbol}_15m"] = end
+            Timeframe.M5.retentionMs?.let {
+                dao.cleanupOldAggregates(symbol, Timeframe.M5.code, it)
+            }
         } catch (e: Exception) {
-            log.warn(e) { "Batch 15m failed for $symbol" }
+            log.warn(e) { "Cleanup failed for $symbol" }
         }
     }
 
-    private fun parsePriceLevelsJson(json: String): List<PriceLevelData> =
-        PriceLevelsJson.parse(json)
-
-    private fun recalculateVolumeStats(symbol: String, trades: List<Trade>, windowStart: Long, windowEnd: Long) {
+    private fun recalculateVolumeStats(
+        symbol: String,
+        trades: List<Trade>,
+        windowStart: Long,
+        windowEnd: Long
+    ) {
         if (trades.isEmpty()) return
 
         val digest = MergingDigest(100.0)
@@ -309,8 +338,10 @@ class BatchScheduler(
 
         val volumeThreshold = BigDecimal.valueOf(digest.quantile(config.whalePercentile))
         val window = VolumeWindow(
-            exchange = "Binance", symbol = symbol,
-            startTime = windowStart, endTime = windowEnd,
+            exchange = exchange,
+            symbol = symbol,
+            startTime = windowStart,
+            endTime = windowEnd,
             totalTrades = trades.size,
             minVolume = BigDecimal.valueOf(minVol),
             maxVolume = BigDecimal.valueOf(maxVol),
@@ -326,7 +357,6 @@ class BatchScheduler(
         )
         dao.saveVolumeWindow(window)
 
-        // Обнаружение крупных сделок
         val batch = mutableListOf<FilteredTrade>()
         for (trade in trades) {
             val volUsd = trade.getVolumeUsd()
@@ -336,13 +366,18 @@ class BatchScheduler(
                     volUsd >= BigDecimal.valueOf(digest.quantile(0.99)) -> TradeCategory.VERY_LARGE
                     else -> TradeCategory.LARGE
                 }
-                batch.add(FilteredTrade(
-                    trade = trade, volumeUsd = volUsd,
-                    percentileThreshold = config.whalePercentile, volumeThreshold = volumeThreshold,
-                    tradeCategory = category,
-                    windowStartTime = windowStart, windowEndTime = windowEnd,
-                    windowTotalTrades = trades.size
-                ))
+                batch.add(
+                    FilteredTrade(
+                        trade = trade,
+                        volumeUsd = volUsd,
+                        percentileThreshold = config.whalePercentile,
+                        volumeThreshold = volumeThreshold,
+                        tradeCategory = category,
+                        windowStartTime = windowStart,
+                        windowEndTime = windowEnd,
+                        windowTotalTrades = trades.size
+                    )
+                )
             }
         }
         if (batch.isNotEmpty()) {
@@ -353,35 +388,16 @@ class BatchScheduler(
 
     private fun processLiquidations(liqs: Map<String, List<LiquidationOrder>>) {
         if (liqs.isEmpty()) return
-        val end = System.currentTimeMillis() / 60_000 * 60_000
-        val start = end - 60_000
+        val end = System.currentTimeMillis() / MINUTE_MS * MINUTE_MS
+        val start = end - MINUTE_MS
 
         liqs.forEach { (symbol, orders) ->
             if (orders.isEmpty()) return@forEach
             try {
-                // Сохраняем сырые ликвидации
                 dao.insertLiquidationsBatch(symbol, orders)
-
-                // Строим 1m footprint ликвидаций (long → bid, short → ask)
-                val priceLevels = linkedMapOf<BigDecimal, PriceLevelData>()
-                var minPrice = BigDecimal.ZERO
-                var maxPrice = BigDecimal.ZERO
-                var first = true
-
-                orders.forEach { liq ->
-                    val p = liq.price
-                    val q = liq.quantity
-                    if (first) { minPrice = p; maxPrice = p; first = false }
-                    else { if (p < minPrice) minPrice = p; if (p > maxPrice) maxPrice = p }
-
-                    val level = priceLevels.getOrPut(p) { PriceLevelData(p) }
-                    if (liq.isLong) { level.bidVolume = level.bidVolume.add(q); level.bidCount++ }
-                    else { level.askVolume = level.askVolume.add(q); level.askCount++ }
-                }
-
                 dao.saveLiquidationAggregate(symbol, start, orders)
-                dao.cleanupOldLiquidations(symbol, RETENTION_MS)
-                log.debug { "Batch liquidations $symbol: ${orders.size} orders levels=${priceLevels.size}" }
+                dao.cleanupOldLiquidations(symbol, LIQUIDATION_RETENTION_MS)
+                log.debug { "Batch liquidations $symbol: ${orders.size} orders" }
             } catch (e: Exception) {
                 log.warn(e) { "Batch liquidations failed for $symbol" }
             }
@@ -391,15 +407,29 @@ class BatchScheduler(
     private fun buildPriceLevelsJson(levels: List<PriceLevelData>): String =
         PriceLevelsJson.build(levels)
 
+    private fun key(symbol: String, timeframe: Timeframe): String = "${symbol}_${timeframe.code}"
+
+    private fun retryDelay(timeframe: Timeframe): Long =
+        if (timeframe == Timeframe.D1) RETRY_DELAY_1D_MS else RETRY_DELAY_MS
+
     private fun formatTime(ms: Long): String {
         if (ms == 0L) return "none"
-        return java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.of("UTC")).toLocalTime().toString()
+        return java.time.Instant.ofEpochMilli(ms)
+            .atZone(java.time.ZoneId.of("UTC"))
+            .toLocalTime()
+            .toString()
     }
 
     fun getWatermarks(): Map<String, Long> = watermarks.toMap()
 
     companion object {
-        private const val RETENTION_MS = 86_400_000L // 1 день
-        private const val REBUILD_15M_WINDOW_MS = 86_400_000L // пересборка 15m за сутки
+        private const val MINUTE_MS = 60_000L
+        private const val FLUSH_GRACE_MS = 2_000L
+        private const val INITIAL_BACKFILL_MS = DAY_MS
+        private const val AUX_RETENTION_MS = DAY_MS
+        private const val LIQUIDATION_RETENTION_MS = DAY_MS
+        private const val CLEANUP_INTERVAL_MS = 3_600_000L
+        private const val RETRY_DELAY_MS = 5_000L
+        private const val RETRY_DELAY_1D_MS = 30_000L
     }
 }
