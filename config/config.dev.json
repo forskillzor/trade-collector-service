@@ -34,10 +34,7 @@
   },
   "monitoring": {
     "httpPort": 8080,
-    "host": "localhost",
-    "enableMetrics": true,
-    "metricsPath": "/metrics",
-    "healthPath": "/health",
-    "statusPath": "/status"
+    "host": "127.0.0.1",
+    "enableMetrics": true
   }
 }

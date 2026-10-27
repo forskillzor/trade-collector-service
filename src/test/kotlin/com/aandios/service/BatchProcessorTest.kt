@@ -12,7 +12,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.math.BigDecimal
+import java.nio.file.Path
 import kotlin.test.*
 
 class BatchProcessorTest {
@@ -20,6 +22,9 @@ class BatchProcessorTest {
     private val dao = mockk<TradeDAO>(relaxed = true)
     private val batchSize = 3
     private val flushIntervalMs = 100L
+
+    @TempDir
+    lateinit var tempDir: Path
 
     @AfterEach
     fun cleanup() {
@@ -75,6 +80,21 @@ class BatchProcessorTest {
     }
 
     @Test
+    fun `on DAO failure trades are persisted to WAL when configured`() {
+        val failingDao = mockk<TradeDAO>(relaxed = false)
+        every { failingDao.insertRawTradesBatch(any()) } throws RuntimeException("DB down")
+        val buffer = DiskBuffer(tempDir.toString())
+        val processor = BatchProcessor(failingDao, batchSize, flushIntervalMs, buffer)
+
+        processor.addTrade(Trade("Binance", "BTCUSDT", 1000L, BigDecimal("50000"), BigDecimal("1"), true))
+        processor.addTrade(Trade("Binance", "BTCUSDT", 1001L, BigDecimal("50000"), BigDecimal("1"), true))
+        processor.addTrade(Trade("Binance", "BTCUSDT", 1002L, BigDecimal("50000"), BigDecimal("1"), true))
+
+        assertTrue(buffer.hasPending())
+        assertEquals(0, processor.getQueueSize("Binance_BTCUSDT"))
+    }
+
+    @Test
     fun `stop flushes remaining trades`(): Unit = runTest {
         val processor = BatchProcessor(dao, 1000, flushIntervalMs)
 
@@ -104,5 +124,20 @@ class BatchProcessorTest {
     fun `getQueueSize returns 0 for unknown instrument`() {
         val processor = BatchProcessor(dao, batchSize, flushIntervalMs)
         assertEquals(0, processor.getQueueSize("unknown"))
+    }
+
+    @Test
+    fun `bounded queue rejects trade when capacity is exhausted`() {
+        val processor = BatchProcessor(
+            dao = dao,
+            batchSize = 1000,
+            flushIntervalMs = flushIntervalMs,
+            maxQueueSize = 2
+        )
+
+        assertTrue(processor.addTrade(Trade("Binance", "BTCUSDT", 1000L, BigDecimal("50000"), BigDecimal("1"), true)))
+        assertTrue(processor.addTrade(Trade("Binance", "BTCUSDT", 1001L, BigDecimal("50000"), BigDecimal("1"), true)))
+        assertFalse(processor.addTrade(Trade("Binance", "BTCUSDT", 1002L, BigDecimal("50000"), BigDecimal("1"), true)))
+        assertEquals(2, processor.getTotalQueueSize())
     }
 }

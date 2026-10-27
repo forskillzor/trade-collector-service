@@ -8,10 +8,11 @@ package com.aandios.service
 import com.aandios.config.ProcessorConfig
 import com.aandios.exchange.ExchangeAdapter
 import com.aandios.exchange.ExchangeAdapterFactory
+import com.aandios.model.Trade
 import com.aandios.storage.postgres.TradeDAO
+import com.fasterxml.jackson.databind.JsonNode
+import kotlinx.coroutines.CoroutineScope
 import mu.KotlinLogging
-import kotlinx.coroutines.*
-import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -22,20 +23,19 @@ class TradeProcessor(
     private val dao: TradeDAO,
     private val config: ProcessorConfig = ProcessorConfig(),
     private val diskBuffer: DiskBuffer? = null,
-    private val deadLetterQueue: DeadLetterQueue? = null
+    private val deadLetterQueue: DeadLetterQueue? = null,
+    private val minuteBuffer: MinuteBuffer? = null
 ) {
     private lateinit var batchProcessor: BatchProcessor
-    private var coroutineScope: CoroutineScope? = null
 
-    // Метрики
-    private var totalTrades = 0L
-    private var tradesPerSecond = 0
-    private var lastSecond = System.currentTimeMillis() / 1000
-    private var lastTotalTrades = 0L
+    private val totalTrades = AtomicLong(0)
+    private val tradesPerSecond = AtomicInteger(0)
+    private val droppedTrades = AtomicLong(0)
+    private val lastSecond = AtomicLong(System.currentTimeMillis() / 1000)
+    private val lastTotalTrades = AtomicLong(0)
 
-    // Статистика по инструментам
     private val instrumentStats = ConcurrentHashMap<String, InstrumentStats>()
-    private val adapterCache = mutableMapOf<String, ExchangeAdapter>()
+    private val adapterCache = ConcurrentHashMap<String, ExchangeAdapter>()
 
     data class InstrumentStats(
         val totalTrades: AtomicLong = AtomicLong(0),
@@ -44,39 +44,54 @@ class TradeProcessor(
     )
 
     fun initialize(scope: CoroutineScope) {
-        this.coroutineScope = scope
-
-        batchProcessor = BatchProcessor(dao, config.batchSize, config.flushIntervalMs, diskBuffer)
+        batchProcessor = BatchProcessor(
+            dao = dao,
+            batchSize = config.batchSize,
+            flushIntervalMs = config.flushIntervalMs,
+            diskBuffer = diskBuffer,
+            maxQueueSize = config.queueCapacity
+        )
         batchProcessor.start(scope)
 
-        log.info { "TradeProcessor initialized | batch=${config.batchSize}" }
+        log.info { "TradeProcessor initialized | batch=${config.batchSize} queue=${config.queueCapacity}" }
     }
 
     fun process(json: String, exchange: String, symbol: String) {
         try {
-            val adapter = getAdapter(exchange)
-            val trade = adapter.parseTrade(json, symbol)
-
-            if (trade != null) {
-                totalTrades++
-                updateTps()
-
-                val stats = instrumentStats.getOrPut(trade.key) { InstrumentStats() }
-                stats.totalTrades.incrementAndGet()
-                stats.lastTradeTime.set(System.currentTimeMillis())
-
-                // Сохраняем в raw_trades (батчами)
-                batchProcessor.addTrade(trade)
-                stats.batchQueueSize.set(batchProcessor.getQueueSize(trade.key))
-
-                if (totalTrades % 1000 == 0L) {
-                    log.debug { "tick #$totalTrades | tps=${tradesPerSecond}/s | ${exchange}/${trade.symbol} price=${trade.price} vol=${trade.getVolumeUsd()} queue=${stats.batchQueueSize}" }
-                }
-            }
+            val trade = getAdapter(exchange).parseTrade(json, symbol)
+            if (trade != null) process(trade)
         } catch (e: Exception) {
             log.error(e) { "Process error: $exchange/$symbol" }
             deadLetterQueue?.push(json, exchange, symbol, e.message ?: "unknown")
         }
+    }
+
+    fun process(node: JsonNode, exchange: String, symbol: String) {
+        try {
+            val trade = getAdapter(exchange).parseTradeNode(node, symbol)
+            if (trade != null) process(trade)
+        } catch (e: Exception) {
+            log.error(e) { "Process node error: $exchange/$symbol" }
+            deadLetterQueue?.push(node.toString(), exchange, symbol, e.message ?: "unknown")
+        }
+    }
+
+    fun process(trade: Trade) {
+        totalTrades.incrementAndGet()
+        updateTps()
+
+        val stats = instrumentStats.getOrPut(trade.key) { InstrumentStats() }
+        stats.totalTrades.incrementAndGet()
+        stats.lastTradeTime.set(System.currentTimeMillis())
+        minuteBuffer?.addTrade(trade)
+
+        if (!batchProcessor.addTrade(trade)) {
+            if (diskBuffer == null || !diskBuffer.saveBatch(listOf(trade))) {
+                droppedTrades.incrementAndGet()
+                log.warn { "Queue full and WAL unavailable; dropping ${trade.key}" }
+            }
+        }
+        stats.batchQueueSize.set(batchProcessor.getQueueSize(trade.key))
     }
 
     private fun getAdapter(exchange: String): ExchangeAdapter {
@@ -87,19 +102,21 @@ class TradeProcessor(
 
     private fun updateTps() {
         val currentSecond = System.currentTimeMillis() / 1000
-        if (currentSecond != lastSecond) {
-            tradesPerSecond = (totalTrades - lastTotalTrades).toInt()
-            lastTotalTrades = totalTrades
-            lastSecond = currentSecond
+        val previousSecond = lastSecond.get()
+        if (currentSecond != previousSecond && lastSecond.compareAndSet(previousSecond, currentSecond)) {
+            val total = totalTrades.get()
+            tradesPerSecond.set((total - lastTotalTrades.getAndSet(total)).toInt())
         }
     }
 
     fun getMetrics(): Map<String, Any> {
+        updateTps()
         return mapOf(
-            "totalTrades" to totalTrades,
-            "tradesPerSecond" to tradesPerSecond,
+            "totalTrades" to totalTrades.get(),
+            "tradesPerSecond" to tradesPerSecond.get(),
             "batchQueueSize" to batchProcessor.getTotalQueueSize(),
             "instruments" to instrumentStats.size,
+            "droppedTrades" to droppedTrades.get(),
             "timestamp" to System.currentTimeMillis()
         )
     }

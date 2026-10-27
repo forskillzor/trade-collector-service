@@ -54,6 +54,7 @@ data class DatabaseConfig(
 data class ProcessorConfig(
     val batchSize: Int = 1000,
     val flushIntervalMs: Long = 1000,
+    val queueCapacity: Int = 250_000,
     val whaleWindowSize: Int = 10000,
     val whalePercentile: Double = 0.98,
     val timeframes: List<String> = listOf("1m", "5m", "15m", "1h", "4h", "1d")
@@ -70,11 +71,8 @@ data class ExportConfig(
 @Serializable
 data class MonitoringConfig(
     val httpPort: Int = 8080,
-    val host: String = "0.0.0.0",
-    val enableMetrics: Boolean = true,
-    val metricsPath: String = "/metrics",
-    val healthPath: String = "/health",
-    val statusPath: String = "/status"
+    val host: String = "127.0.0.1",
+    val enableMetrics: Boolean = true
 )
 
 @Serializable

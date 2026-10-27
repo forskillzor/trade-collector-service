@@ -31,11 +31,9 @@ class DeadLetterQueue(private val dataDir: String, private val maxEntries: Int =
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
 
-            dqlFile.bufferedWriter().use { writer ->
-                writer.appendLine(
-                    """{"ts":$timestamp,"exchange":"$exchange","symbol":"$symbol","error":"$escapedError","message":"$escapedMessage"}"""
-                )
-            }
+            dqlFile.appendText(
+                """{"ts":$timestamp,"exchange":"$exchange","symbol":"$symbol","error":"$escapedError","message":"$escapedMessage"}""" + "\n"
+            )
 
             val lines = dqlFile.readLines()
             if (lines.size > maxEntries) {

@@ -5,9 +5,14 @@
 
 package com.aandios.service
 
+import com.aandios.BuildConfig
 import com.aandios.config.AppConfig
 import com.aandios.storage.postgres.TradeDAO
-import kotlinx.coroutines.*
+import com.aandios.telemetry.AdminServer
+import com.aandios.telemetry.ServiceMetrics
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -15,16 +20,17 @@ private val log = KotlinLogging.logger {}
 
 class TradeCollectorService(
     private val dao: TradeDAO,
-    private val config: AppConfig
+    private val config: AppConfig,
+    private val scope: CoroutineScope,
+    private val metrics: ServiceMetrics
 ) {
     private val isRunning = AtomicBoolean(false)
+    private val termination = CompletableDeferred<Unit>()
     private val exchangeClients = mutableListOf<ExchangeClient>()
     private var tradeProcessor: TradeProcessor? = null
     private var batchScheduler: BatchScheduler? = null
     private var liquidationProcessor: LiquidationProcessor? = null
-    private var monitoringServer: MonitoringServer? = null
-    private var serviceJob: Job? = null
-    private var coroutineScope: CoroutineScope? = null
+    private var adminServer: AdminServer? = null
 
     suspend fun start() {
         if (isRunning.getAndSet(true)) {
@@ -35,12 +41,7 @@ class TradeCollectorService(
         try {
             log.info { "Initializing TradeCollectorService..." }
 
-            coroutineScope = CoroutineScope(Dispatchers.Default)
-
-            // In-memory buffer (только для liquidations)
             val minuteBuffer = MinuteBuffer()
-
-            // Liquidation processor
             val collectLiq = config.exchanges.any { it.collectLiquidations }
             liquidationProcessor = LiquidationProcessor(minuteBuffer, collectLiq)
 
@@ -48,19 +49,21 @@ class TradeCollectorService(
             val diskBuffer = DiskBuffer(dataDir)
             val deadLetterQueue = DeadLetterQueue(dataDir)
 
-            // Trade processor (trades → raw_trades DB, как раньше)
-            tradeProcessor = TradeProcessor(dao, config.processor, diskBuffer, deadLetterQueue)
-            tradeProcessor!!.initialize(coroutineScope!!)
+            tradeProcessor = TradeProcessor(
+                dao,
+                config.processor,
+                diskBuffer,
+                deadLetterQueue,
+                minuteBuffer
+            )
+            tradeProcessor!!.initialize(scope)
 
-            // Создание клиентов для бирж
             config.exchanges.filter { it.enabled }.forEach { exchangeConfig ->
                 val client = ExchangeClient(exchangeConfig, tradeProcessor!!, liquidationProcessor)
                 exchangeClients.add(client)
             }
-
             log.info { "Created ${exchangeClients.size} clients, liquidations=$collectLiq" }
 
-            // BatchScheduler: raw_trades → 1m, затем лестница таймфреймов
             val allSymbols = config.exchanges.flatMap { it.symbols }.map { it.uppercase() }.distinct()
             val exchangeName = config.exchanges.firstOrNull { it.enabled }?.name ?: "Binance"
             batchScheduler = BatchScheduler(
@@ -70,24 +73,27 @@ class TradeCollectorService(
                 config.processor,
                 exchangeName
             )
-            batchScheduler!!.start(coroutineScope!!)
+            batchScheduler!!.start(scope)
             log.info { "BatchScheduler started for ${allSymbols.size} symbols on $exchangeName" }
 
-            // Запуск мониторинга
+            registerMetrics()
+
             if (config.monitoring.enableMetrics) {
-                monitoringServer = MonitoringServer(
+                adminServer = AdminServer(
                     port = config.monitoring.httpPort,
                     host = config.monitoring.host,
-                    tradeProcessor = tradeProcessor!!,
-                    tradeDAO = dao,
-                    exchangeClients = exchangeClients,
+                    metrics = metrics,
+                    serviceName = "TradeCollectorService",
+                    version = BuildConfig.VERSION,
+                    readiness = {
+                        dao.ping() && exchangeClients.any { it.isConnected() }
+                    }
                 )
-                monitoringServer?.start()
+                adminServer?.start()
             }
 
-            // Запуск всех клиентов
             exchangeClients.forEach { client ->
-                coroutineScope!!.launch {
+                scope.launch {
                     try {
                         client.start()
                     } catch (e: Exception) {
@@ -96,78 +102,90 @@ class TradeCollectorService(
                 }
             }
 
-            // Основной цикл мониторинга
-            serviceJob = coroutineScope!!.launch {
-                while (isRunning.get()) {
-                    delay(10000) // Каждые 10 секунд
-                    logStatus()
-                }
-            }
-
             log.info { "Service started successfully" }
-
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             log.error(e) { "Service start error" }
             stop()
+            throw e
         }
     }
 
-    private fun logStatus() {
-        val metrics = tradeProcessor?.getMetrics() ?: emptyMap()
-        val memory = Runtime.getRuntime()
-        val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
-        val cpuLoad = osBean?.systemCpuLoad?.let { if (it < 0) null else it }
-
-        val tps = (metrics["tradesPerSecond"] as? Int) ?: 0
-        val load = osBean?.systemLoadAverage ?: 0.0
-        val heapUsed = (memory.totalMemory() - memory.freeMemory()) / 1024 / 1024
-        val heapMax = memory.maxMemory() / 1024 / 1024
-
-        MetricsLog.snapshot(tps, load, heapUsed, heapMax, cpuLoad)
-
-        log.info { "STATUS | ticks=${metrics["totalTrades"] ?: 0} tps=$tps queue=${metrics["batchQueueSize"] ?: 0} clients=${exchangeClients.size} mem_total=${memory.totalMemory() / 1024 / 1024}MB mem_free=${memory.freeMemory() / 1024 / 1024}MB" }
+    private fun registerMetrics() {
+        metrics.gauge(
+            "trade_collector_trades_total",
+            "Total number of processed trades"
+        ) {
+            tradeProcessor?.getMetrics()?.get("totalTrades") as? Number ?: 0
+        }
+        metrics.gauge(
+            "trade_collector_tps",
+            "Trades per second at the last measurement"
+        ) {
+            tradeProcessor?.getMetrics()?.get("tradesPerSecond") as? Number ?: 0
+        }
+        metrics.gauge(
+            "trade_collector_batch_queue_size",
+            "Trades waiting for the database writer"
+        ) {
+            tradeProcessor?.getMetrics()?.get("batchQueueSize") as? Number ?: 0
+        }
+        metrics.gauge(
+            "trade_collector_instruments",
+            "Number of instruments with processed trades"
+        ) {
+            tradeProcessor?.getMetrics()?.get("instruments") as? Number ?: 0
+        }
+        metrics.gauge(
+            "trade_collector_dropped_total",
+            "Trades dropped because both queue and WAL were unavailable"
+        ) {
+            tradeProcessor?.getMetrics()?.get("droppedTrades") as? Number ?: 0
+        }
+        metrics.gauge(
+            "trade_collector_ws_connected",
+            "Number of connected exchange WebSockets"
+        ) {
+            exchangeClients.count { it.isConnected() }
+        }
+        metrics.gauge(
+            "trade_collector_ws_total",
+            "Number of configured exchange WebSockets"
+        ) {
+            exchangeClients.size
+        }
     }
 
     suspend fun stop() {
         if (!isRunning.getAndSet(false)) {
+            termination.complete(Unit)
             return
         }
 
         log.info { "Stopping TradeCollectorService..." }
-
-        ShutdownChain()
-            .step("BatchScheduler", 30_000) { batchScheduler?.stop() }
-            .step("TradeProcessor", 30_000) { tradeProcessor?.shutdown() }
-            .step("ExchangeClients", 15_000) {
-                exchangeClients.forEach { client -> client.stop() }
-                exchangeClients.clear()
-            }
-            .step("MonitoringServer", 5_000) { monitoringServer?.stop() }
-            .execute()
-
-        // Отмена задач
-        serviceJob?.cancel()
-        serviceJob = null
-
-        coroutineScope?.cancel()
-        coroutineScope = null
-
-        tradeProcessor = null
-        monitoringServer = null
+        try {
+            ShutdownChain()
+                .step("ExchangeClients", 15_000) {
+                    exchangeClients.forEach { client -> client.stop() }
+                    exchangeClients.clear()
+                }
+                .step("BatchScheduler", 30_000) { batchScheduler?.stop() }
+                .step("TradeProcessor", 30_000) { tradeProcessor?.shutdown() }
+                .step("AdminServer", 5_000) { adminServer?.stop() }
+                .execute()
+        } finally {
+            batchScheduler = null
+            tradeProcessor = null
+            liquidationProcessor = null
+            adminServer = null
+            termination.complete(Unit)
+        }
 
         log.info { "Service stopped" }
     }
 
-    fun isRunning(): Boolean = isRunning.get()
-
-    fun getMetrics(): Map<String, Any> {
-        val processorMetrics = tradeProcessor?.getMetrics() ?: emptyMap()
-
-        return processorMetrics + mapOf(
-            "exchangeClients" to exchangeClients.size,
-            "isRunning" to isRunning.get(),
-            "memoryUsedMB" to Runtime.getRuntime().totalMemory() / 1024 / 1024,
-            "memoryFreeMB" to Runtime.getRuntime().freeMemory() / 1024 / 1024
-        )
+    suspend fun awaitTermination() {
+        termination.await()
     }
+
+    fun isRunning(): Boolean = isRunning.get()
 }

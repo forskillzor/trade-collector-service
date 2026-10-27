@@ -22,18 +22,23 @@ class DiskBuffer(private val dataDir: String) {
     }
 
     @Synchronized
-    fun saveBatch(trades: List<Trade>) {
-        try {
-            bufferFile.bufferedWriter().use { writer ->
-                trades.forEach { trade ->
-                    writer.appendLine(
-                        """{"exchange":"${trade.exchange}","symbol":"${trade.symbol}","timestamp":${trade.timestamp},"price":"${trade.price}","quantity":"${trade.quantity}","is_buy":${trade.isBuy}}"""
-                    )
+    fun saveBatch(trades: List<Trade>): Boolean {
+        if (trades.isEmpty()) return true
+        return try {
+            bufferFile.appendText(
+                buildString {
+                    trades.forEach { trade ->
+                        appendLine(
+                            """{"exchange":"${trade.exchange}","symbol":"${trade.symbol}","timestamp":${trade.timestamp},"price":"${trade.price}","quantity":"${trade.quantity}","is_buy":${trade.isBuy}}"""
+                        )
+                    }
                 }
-            }
-            log.warn { "DiskBuffer saved ${trades.size} trades (total=${size()})" }
+            )
+            log.warn { "DiskBuffer appended ${trades.size} trades (bytes=${size()})" }
+            true
         } catch (e: Exception) {
             log.error(e) { "DiskBuffer write error" }
+            false
         }
     }
 
@@ -41,7 +46,7 @@ class DiskBuffer(private val dataDir: String) {
     fun replayTo(dao: TradeDAO): Boolean {
         if (!hasPending()) return false
 
-        try {
+        return try {
             val lines = bufferFile.readLines()
             if (lines.isEmpty()) {
                 bufferFile.delete()
@@ -71,15 +76,15 @@ class DiskBuffer(private val dataDir: String) {
             }
 
             if (trades.isNotEmpty()) {
-                // v3: raw_trades removed from DB — replayed trades discarded
-                log.info { "DiskBuffer replayed ${trades.size} trades (discarded, v3 in-memory)" }
+                dao.insertRawTradesBatch(trades)
+                log.info { "DiskBuffer replayed ${trades.size} trades" }
             }
 
             bufferFile.delete()
-            return true
+            true
         } catch (e: Exception) {
-            log.error(e) { "DiskBuffer replay error" }
-            return false
+            log.error(e) { "DiskBuffer replay error; data kept for next start" }
+            false
         }
     }
 

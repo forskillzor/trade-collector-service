@@ -343,40 +343,6 @@ class TradeDAO(
         }
     }
 
-    fun getRecentRawTrades(
-        exchange: String,
-        symbol: String,
-        limit: Int = 1000000
-    ): List<Trade> {
-        ensureTables(symbol)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                SELECT exchange, symbol, timestamp, price, quantity, is_buy
-                FROM ${tableName("raw_trades", symbol)} 
-                WHERE exchange = ? AND symbol = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """).use { stmt ->
-                stmt.setString(1, exchange)
-                stmt.setString(2, symbol)
-                stmt.setInt(3, limit)
-                val rs = stmt.executeQuery()
-                val trades = mutableListOf<Trade>()
-                while (rs.next()) {
-                    trades.add(Trade(
-                        exchange = rs.getString("exchange"),
-                        symbol = rs.getString("symbol"),
-                        timestamp = rs.getLong("timestamp"),
-                        price = rs.getBigDecimal("price"),
-                        quantity = rs.getBigDecimal("quantity"),
-                        isBuy = rs.getBoolean("is_buy")
-                    ))
-                }
-                trades.reversed()
-            }
-        }
-    }
-
     fun saveVolumeWindow(window: VolumeWindow) {
         ensureTables(window.symbol)
         val tbl = tableName("volume_windows", window.symbol)
@@ -559,93 +525,7 @@ class TradeDAO(
         }
     }
 
-    // ========== STATISTICS ==========
-
-    fun getDatabaseStats(): Map<String, Any> {
-        return try {
-            dataSource.connection.use { conn ->
-                val stmt = conn.createStatement()
-                val rs = stmt.executeQuery("SELECT pg_database_size(current_database()) as db_size_bytes")
-                val dbSize = if (rs.next()) rs.getLong("db_size_bytes") / 1024 / 1024 else 0L
-
-                val tableCounts = mutableMapOf<String, Long>()
-                val tableList = conn.createStatement().executeQuery("""
-                    SELECT tablename FROM pg_catalog.pg_tables 
-                    WHERE schemaname = 'public' AND tablename LIKE 'raw_trades_%'
-                """)
-                var totalRaw = 0L
-                while (tableList.next()) {
-                    val tbl = tableList.getString("tablename")
-                    val cntRs = conn.createStatement().executeQuery("SELECT COUNT(*) FROM $tbl")
-                    if (cntRs.next()) {
-                        val cnt = cntRs.getLong(1)
-                        tableCounts[tbl] = cnt
-                        totalRaw += cnt
-                    }
-                }
-
-                mapOf(
-                    "rawTrades" to totalRaw,
-                    "tableCounts" to tableCounts,
-                    "dbSizeMB" to dbSize,
-                    "timestamp" to System.currentTimeMillis()
-                )
-            }
-        } catch (e: Exception) {
-            log.warn(e) { "DB stats error" }
-            emptyMap()
-        }
-    }
-
-    fun getHistory(symbol: String, minutes: Int = 60): List<Map<String, Any?>> {
-        ensureTables(symbol)
-        val cutoff = System.currentTimeMillis() - (minutes * 60_000L)
-        return dataSource.connection.use { conn ->
-            conn.prepareStatement("""
-                WITH minutes AS (
-                    SELECT generate_series(
-                        ?,
-                        COALESCE((SELECT MAX(start_time) FROM ${tableName("aggregates", symbol)}), ?),
-                        60000
-                    ) AS minute_start
-                ),
-                agg AS (
-                    SELECT start_time, 1 as has_agg FROM ${tableName("aggregates", symbol)}
-                    WHERE timeframe = '1m' AND start_time >= ?
-                ),
-                raw AS (
-                    SELECT (timestamp / 60000) * 60000 AS minute_start, 1 as has_raw
-                    FROM ${tableName("raw_trades", symbol)}
-                    WHERE timestamp >= ?
-                    GROUP BY minute_start
-                )
-                SELECT m.minute_start,
-                       COALESCE(a.has_agg, 0) as has_agg,
-                       COALESCE(r.has_raw, 0) as has_raw
-                FROM minutes m
-                LEFT JOIN agg a ON a.start_time = m.minute_start
-                LEFT JOIN raw r ON r.minute_start = m.minute_start
-                ORDER BY m.minute_start DESC
-                LIMIT ?
-            """).use { stmt ->
-                stmt.setLong(1, cutoff)
-                stmt.setLong(2, cutoff)
-                stmt.setLong(3, cutoff)
-                stmt.setLong(4, cutoff)
-                stmt.setInt(5, minutes)
-                val rs = stmt.executeQuery()
-                val results = mutableListOf<Map<String, Any?>>()
-                while (rs.next()) {
-                    results.add(mapOf(
-                        "minute" to rs.getLong("minute_start"),
-                        "hasAgg" to (rs.getInt("has_agg") > 0),
-                        "hasRaw" to (rs.getInt("has_raw") > 0)
-                    ))
-                }
-                results.reversed()
-            }
-        }
-    }
+    // ========== HEALTH ==========
 
     fun ping(): Boolean {
         return try {

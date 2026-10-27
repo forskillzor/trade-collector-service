@@ -68,10 +68,11 @@ DB_PASSWORD=strong_password
 
 ## Мониторинг
 
-- **Дашборд**: `http://vps:8080/` — TPS, CPU, heap, логи, агрегаты по символам, поминутная гистограмма
-- **Health**: `http://vps:8080/health`
-- **Метрики**: `http://vps:8080/metrics`
-- **Статус**: `http://vps:8080/status`
+Админ-сервер слушает только localhost. Метрики снимаются Prometheus/Alloy.
+
+- **Health**: `http://127.0.0.1:8080/health`
+- **Ready**: `http://127.0.0.1:8080/ready`
+- **Метрики**: `http://127.0.0.1:8080/metrics`
 
 ## Структура проекта
 
@@ -86,8 +87,8 @@ trade-collector/
 │   │   ├── TradeProcessor.kt            # Горячий цикл: парсинг + raw_trades
 │   │   ├── BatchScheduler.kt            # Пакетная обработка агрегатов
 │   │   └── TradeCollectorService.kt     # Оркестратор
+│   ├── telemetry/                       # /health, /ready, /metrics
 │   └── storage/postgres/                # Доступ к БД
-├── static/index.html                    # Дашборд (Vue.js)
 ├── scripts/                             # Деплой-скрипты
 ├── config/                              # Конфиги (dev/prod)
 └── docker-compose.yml                   # PostgreSQL для локальной разработки

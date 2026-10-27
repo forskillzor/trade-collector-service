@@ -49,11 +49,12 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktor_version")
     implementation("io.ktor:ktor-client-websockets:$ktor_version")
 
-    // Ktor Server (Monitoring)
+    // Ktor Server (Admin)
     implementation("io.ktor:ktor-server-core:$ktor_version")
-    implementation("io.ktor:ktor-server-jetty:$ktor_version")
-    implementation("io.ktor:ktor-server-content-negotiation:$ktor_version")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
+    implementation("io.ktor:ktor-server-cio:$ktor_version")
+
+    // Metrics
+    implementation("io.micrometer:micrometer-registry-prometheus:1.14.6")
 
     // JSON
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.15.0")

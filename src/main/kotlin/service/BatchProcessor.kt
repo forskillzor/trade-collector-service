@@ -7,10 +7,17 @@ package com.aandios.service
 
 import com.aandios.model.Trade
 import com.aandios.storage.postgres.TradeDAO
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import mu.KotlinLogging
-import java.util.concurrent.ConcurrentLinkedQueue
-import kotlinx.coroutines.*
+import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 private val log = KotlinLogging.logger {}
 
@@ -20,6 +27,7 @@ private class CircuitBreaker(
 ) {
     enum class State { CLOSED, OPEN, HALF_OPEN }
 
+    @Volatile
     var state = State.CLOSED
         private set
     private var failureCount = 0
@@ -65,116 +73,168 @@ private class CircuitBreaker(
     }
 }
 
+private class TradeQueue {
+    private val items = ArrayDeque<Trade>()
+    private val lock = Any()
+
+    fun offer(trade: Trade) {
+        synchronized(lock) { items.addLast(trade) }
+    }
+
+    fun size(): Int = synchronized(lock) { items.size }
+
+    fun drain(max: Int): List<Trade> {
+        synchronized(lock) {
+            val count = minOf(max, items.size)
+            if (count == 0) return emptyList()
+            val batch = ArrayList<Trade>(count)
+            repeat(count) { batch.add(items.removeFirst()) }
+            return batch
+        }
+    }
+
+    fun prependAll(batch: List<Trade>) {
+        synchronized(lock) {
+            for (i in batch.indices.reversed()) {
+                items.addFirst(batch[i])
+            }
+        }
+    }
+}
+
 class BatchProcessor(
     private val dao: TradeDAO,
     private val batchSize: Int = 1000,
     private val flushIntervalMs: Long = 1000,
-    private val diskBuffer: DiskBuffer? = null
+    private val diskBuffer: DiskBuffer? = null,
+    private val maxQueueSize: Int = 250_000
 ) {
-    private val tradeQueues = ConcurrentHashMap<String, ConcurrentLinkedQueue<Trade>>()
-    private val flushLocks = ConcurrentHashMap<String, Any>()
+    private val tradeQueues = ConcurrentHashMap<String, TradeQueue>()
+    private val totalSize = AtomicInteger(0)
     private val circuitBreaker = CircuitBreaker()
+    private val flushLock = Any()
+    private val wakeUp = Channel<Unit>(Channel.CONFLATED)
+
+    @Volatile
     private var isRunning = false
     private var job: Job? = null
-    private var flushScope: CoroutineScope? = null
 
     fun start(scope: CoroutineScope) {
         if (isRunning) return
 
         isRunning = true
-        flushScope = scope
 
         if (diskBuffer?.hasPending() == true) {
             log.info { "Replaying disk buffer..." }
             diskBuffer.replayTo(dao)
         }
 
-        job = scope.launch {
-            processBatchLoop()
-        }
+        job = scope.launch(Dispatchers.IO) { processBatchLoop() }
 
-        log.info { "BatchProcessor started | batch=$batchSize flush=${flushIntervalMs}ms" }
+        log.info {
+            "BatchProcessor started | batch=$batchSize flush=${flushIntervalMs}ms " +
+                "maxQueue=$maxQueueSize"
+        }
     }
 
-    fun addTrade(trade: Trade) {
-        val key = "${trade.exchange}_${trade.symbol}"
-        val queue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
-        queue.add(trade)
-
-        if (queue.size >= batchSize) {
-            val scope = flushScope
-            if (scope != null) {
-                scope.launch { flushBatch(key) }
-            } else {
-                flushBatch(key)
-            }
+    fun addTrade(trade: Trade): Boolean {
+        if (totalSize.incrementAndGet() > maxQueueSize) {
+            totalSize.decrementAndGet()
+            return false
         }
+
+        if (!isRunning) {
+            val queue = tradeQueues.getOrPut(trade.key) { TradeQueue() }
+            queue.offer(trade)
+            if (queue.size() >= batchSize) {
+                synchronized(flushLock) { flushBatch(trade.key, queue) }
+            }
+            return true
+        }
+
+        val queue = tradeQueues.getOrPut(trade.key) { TradeQueue() }
+        queue.offer(trade)
+
+        if (queue.size() >= batchSize) {
+            wakeUp.trySend(Unit)
+        }
+        return true
     }
 
     fun getQueueSize(instrumentKey: String): Int {
-        return tradeQueues[instrumentKey]?.size ?: 0
+        return tradeQueues[instrumentKey]?.size() ?: 0
     }
 
-    fun getTotalQueueSize(): Int {
-        return tradeQueues.values.sumOf { it.size }
-    }
+    fun getTotalQueueSize(): Int = totalSize.get()
 
     private suspend fun processBatchLoop() {
         while (isRunning) {
-            delay(flushIntervalMs)
-            tradeQueues.keys.forEach { key ->
-                flushBatch(key)
+            val hasFullQueue = tradeQueues.values.any { it.size() >= batchSize }
+            if (hasFullQueue) {
+                val flushed = synchronized(flushLock) { flushAll(onlyFull = true) }
+                if (!flushed) delay(flushIntervalMs)
+                continue
+            }
+
+            val signaled = withTimeoutOrNull(flushIntervalMs) { wakeUp.receive() }
+            if (signaled == null) {
+                synchronized(flushLock) { flushAll(onlyFull = false) }
             }
         }
     }
 
-    private fun flushBatch(key: String) {
-        val lock = flushLocks.getOrPut(key) { Any() }
-        synchronized(lock) {
-            val queue = tradeQueues[key] ?: return
-            val batch = mutableListOf<Trade>()
-
-            while (batch.size < batchSize && queue.isNotEmpty()) {
-                val trade = queue.poll()
-                if (trade != null) {
-                    batch.add(trade)
-                }
-            }
-
-            if (batch.isNotEmpty()) {
-                if (!circuitBreaker.isCallAllowed()) {
-                    log.warn { "Circuit Breaker OPEN — saving ${batch.size} trades to disk for $key" }
-                    diskBuffer?.saveBatch(batch)
-                } else {
-                    try {
-                        dao.insertRawTradesBatch(batch)
-                        circuitBreaker.onSuccess()
-                    } catch (e: Exception) {
-                        log.error(e) { "Batch insert error for $key" }
-                        circuitBreaker.onFailure()
-                        batch.forEach { trade ->
-                            val currentQueue = tradeQueues.getOrPut(key) { ConcurrentLinkedQueue() }
-                            currentQueue.offer(trade)
-                        }
-                        return
-                    }
-                }
-            }
-
-            if (queue.isEmpty()) {
-                tradeQueues.remove(key)
-                flushLocks.remove(key)
-            }
+    private fun flushAll(onlyFull: Boolean): Boolean {
+        var success = true
+        tradeQueues.forEach { (key, queue) ->
+            if (onlyFull && queue.size() < batchSize) return@forEach
+            if (!flushBatch(key, queue)) success = false
         }
+        return success
+    }
+
+    private fun flushBatch(key: String, queue: TradeQueue): Boolean {
+        val batch = queue.drain(batchSize)
+        if (batch.isEmpty()) return true
+
+        if (!circuitBreaker.isCallAllowed()) {
+            log.warn { "Circuit Breaker OPEN — saving ${batch.size} trades to disk for $key" }
+            return persistOrRequeue(key, queue, batch)
+        }
+
+        return try {
+            dao.insertRawTradesBatch(batch)
+            circuitBreaker.onSuccess()
+            totalSize.addAndGet(-batch.size)
+            true
+        } catch (e: Exception) {
+            log.error(e) { "Batch insert error for $key" }
+            circuitBreaker.onFailure()
+            persistOrRequeue(key, queue, batch)
+        }
+    }
+
+    private fun persistOrRequeue(key: String, queue: TradeQueue, batch: List<Trade>): Boolean {
+        if (diskBuffer != null && diskBuffer.saveBatch(batch)) {
+            totalSize.addAndGet(-batch.size)
+            log.warn { "Saved ${batch.size} trades to disk WAL for $key" }
+            return true
+        }
+
+        queue.prependAll(batch)
+        log.warn { "Re-queued ${batch.size} trades for $key after DB/WAL failure" }
+        return false
     }
 
     fun stop() {
         isRunning = false
         job?.cancel()
-        flushScope = null
+        job = null
 
-        tradeQueues.keys.forEach { key ->
-            flushBatch(key)
+        synchronized(flushLock) {
+            do {
+                val flushed = flushAll(onlyFull = false)
+                if (!flushed) break
+            } while (tradeQueues.values.any { it.size() > 0 })
         }
 
         log.info { "BatchProcessor stopped" }

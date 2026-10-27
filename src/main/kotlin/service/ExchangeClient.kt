@@ -120,7 +120,7 @@ class ExchangeClient(
 
                                 if (frameCount <= 5) log.debug { "${config.name}: TRADE #$frameCount $symbol" }
 
-                                processor.process(node.toString(), config.name, symbol)
+                                processor.process(node, config.name, symbol)
                             }
                             is Frame.Close -> {
                                 val reason = frame.readReason()?.message ?: "no reason"
@@ -196,11 +196,12 @@ class ExchangeClient(
                         when (frame) {
                             is Frame.Text -> {
                                 val text = frame.readText()
-                                if (!adapter.isTradeMessage(text)) {
+                                val trade = adapter.parseTrade(text, symbol)
+                                if (trade == null) {
                                     continue
                                 }
                                 lastTradeTime = System.currentTimeMillis()
-                                processor.process(text, config.name, symbol)
+                                processor.process(trade)
                             }
                             is Frame.Ping -> { lastTradeTime = System.currentTimeMillis() }
                             is Frame.Pong -> { lastTradeTime = System.currentTimeMillis() }

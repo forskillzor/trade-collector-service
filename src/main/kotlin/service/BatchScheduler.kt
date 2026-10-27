@@ -4,9 +4,17 @@ import com.aandios.config.ProcessorConfig
 import com.aandios.model.*
 import com.aandios.storage.postgres.TradeDAO
 import com.tdunning.math.stats.MergingDigest
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
 import java.math.BigDecimal
+import java.util.ArrayDeque
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.sqrt
 
 private val log = KotlinLogging.logger {}
@@ -14,8 +22,9 @@ private val log = KotlinLogging.logger {}
 /**
  * Строит footprint-агрегаты лестницы из raw_trades и сохраняет их в БД.
  *
- * 1m строится из сырых сделок, остальные таймфреймы — из ближайшего
- * меньшего таймфрейма. В БД сохраняются только закрытые бакеты.
+ * 1m строится из in-memory буфера, при промахе — из raw_trades; остальные
+ * таймфреймы — из ближайшего меньшего таймфрейма. В БД сохраняются только
+ * закрытые бакеты.
  */
 class BatchScheduler(
     private val buffer: MinuteBuffer,
@@ -28,6 +37,7 @@ class BatchScheduler(
         Timeframe.parse(config.timeframes).ifEmpty { Timeframe.ordered }
     private val watermarks = mutableMapOf<String, Long>()
     private val retryAfter = mutableMapOf<String, Long>()
+    private val recentTrades = ConcurrentHashMap<String, ArrayDeque<Trade>>()
     private var job: Job? = null
     private var lastCleanupAt = 0L
 
@@ -49,7 +59,7 @@ class BatchScheduler(
         }
         log.info { "BatchScheduler started timeframes=${timeframes.joinToString { it.code }}" }
 
-        job = scope.launch {
+        job = scope.launch(Dispatchers.IO) {
             try {
                 catchUpAll(System.currentTimeMillis())
                 while (isActive) {
@@ -118,18 +128,25 @@ class BatchScheduler(
             if (now < end + FLUSH_GRACE_MS) break
 
             try {
-                val trades = getTradesInRange(symbol, start, end)
+                val bufferedTrades = buffer.getTrades(symbol, start, end)
+                val trades = if (bufferedTrades.isNotEmpty()) {
+                    bufferedTrades
+                } else {
+                    getTradesInRange(symbol, start, end)
+                }
                 if (trades.isNotEmpty()) {
+                    rememberTrades(symbol, trades)
                     build1mAggregate(symbol, start, end, trades)
                     if (end == currentMinute) {
-                        val recentTrades = dao.getRecentRawTrades(exchange, symbol, 10_000)
-                        if (recentTrades.isNotEmpty()) {
-                            recalculateVolumeStats(symbol, recentTrades, start, end)
+                        val recent = recentTradesSnapshot(symbol)
+                        if (recent.isNotEmpty()) {
+                            recalculateVolumeStats(symbol, recent, start, end)
                         }
                     }
                 } else {
                     saveEmptyAggregate(symbol, Timeframe.M1, start, end)
                 }
+                buffer.clearTrades(symbol, start)
                 watermark = end
                 watermarks[key] = watermark
             } catch (e: Exception) {
@@ -306,6 +323,21 @@ class BatchScheduler(
         }
     }
 
+    private fun rememberTrades(symbol: String, trades: List<Trade>) {
+        val ring = recentTrades.computeIfAbsent(symbol) { ArrayDeque<Trade>() }
+        synchronized(ring) {
+            trades.forEach { ring.addLast(it) }
+            while (ring.size > config.whaleWindowSize) {
+                ring.removeFirst()
+            }
+        }
+    }
+
+    private fun recentTradesSnapshot(symbol: String): List<Trade> {
+        val ring = recentTrades[symbol] ?: return emptyList()
+        return synchronized(ring) { ring.toList() }
+    }
+
     private fun recalculateVolumeStats(
         symbol: String,
         trades: List<Trade>,
@@ -337,6 +369,8 @@ class BatchScheduler(
         val variance = ((totalSumSq / n) - (avgVolume * avgVolume)).coerceAtLeast(0.0)
 
         val volumeThreshold = BigDecimal.valueOf(digest.quantile(config.whalePercentile))
+        val p995 = BigDecimal.valueOf(digest.quantile(0.995))
+        val p99 = BigDecimal.valueOf(digest.quantile(0.99))
         val window = VolumeWindow(
             exchange = exchange,
             symbol = symbol,
@@ -362,8 +396,8 @@ class BatchScheduler(
             val volUsd = trade.getVolumeUsd()
             if (volUsd >= volumeThreshold) {
                 val category = when {
-                    volUsd >= BigDecimal.valueOf(digest.quantile(0.995)) -> TradeCategory.WHALE
-                    volUsd >= BigDecimal.valueOf(digest.quantile(0.99)) -> TradeCategory.VERY_LARGE
+                    volUsd >= p995 -> TradeCategory.WHALE
+                    volUsd >= p99 -> TradeCategory.VERY_LARGE
                     else -> TradeCategory.LARGE
                 }
                 batch.add(
